@@ -773,7 +773,10 @@
       font-weight: 500;
     }
 
-    .node-icon.type-building { color: #1976d2; }
+    .node-icon.type-region { color: #475569; }
+    .node-icon.type-city { color: #64748b; }
+    .node-icon.type-complex { color: #1976d2; }
+    .node-icon.type-house { color: #2563eb; }
     .node-icon.type-entrance { color: #0284c7; }
     .node-icon.type-floor { color: #7c3aed; }
     .node-icon.type-flat { color: #16a34a; }
@@ -1463,6 +1466,12 @@
       padding: 9px 12px;
       border-bottom: 1px solid #f8fafc;
       color: #1e293b;
+    }
+
+    .fleet-table td .sub {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 2px;
     }
 
     .fleet-table tbody tr {
@@ -2538,7 +2547,7 @@
     <!-- ЛЕВАЯ ПАНЕЛЬ: ДЕРЕВО -->
     <div class="tree-panel" id="treePanel">
       <div class="tree-tabs">
-        <button class="tree-tab active" data-tab="addr" title="Полное дерево: подъезды, этажи, квартиры, аккаунты и панели">
+        <button class="tree-tab active" data-tab="addr" title="Полное дерево: регион, город, ЖК, дома, подъезды, этажи, квартиры, аккаунты и панели">
           <span class="material-symbols-outlined">account_tree</span>
           Адреса
         </button>
@@ -2551,7 +2560,7 @@
       <div class="tree-search-row">
         <div class="search-wrapper">
           <span class="material-symbols-outlined">search</span>
-          <input type="text" class="search-input" id="searchInput" placeholder="Поиск: адрес, квартира, панель, номер, email…" />
+          <input type="text" class="search-input" id="searchInput" placeholder="Поиск: город, ЖК, дом, квартира, панель, номер, email…" />
           <button class="search-clear" id="searchClear" title="Очистить поиск" aria-label="Очистить поиск">
             <span class="material-symbols-outlined">close</span>
           </button>
@@ -2599,7 +2608,7 @@
       <div class="detail-empty" id="detailEmpty">
         <span class="material-symbols-outlined">apartment</span>
         <div class="title">Ничего не выбрано</div>
-        <div class="sub">Выберите ЖК, подъезд, этаж, квартиру, панель или аккаунт в дереве слева</div>
+        <div class="sub">Выберите регион, город, ЖК, дом, подъезд, квартиру, панель или аккаунт в дереве слева</div>
       </div>
 
       <div class="detail-card hidden" id="detailCard">
@@ -2646,21 +2655,44 @@
        выделением и контекстными меню, справа карточка выбранного объекта,
        разрушающие действия обратимы через тост с кнопкой «Отменить».
 
-       Доменная модель по документам BMS:
-         building (ЖК) → entrance (подъезд) → floor (этаж) → flat (квартира)
-         panel   — вызывная панель, стоит у ЖК или у подъезда
+       Доменная модель по документам BMS. Страна одна — РФ, поэтому её
+       в дереве нет, адрес начинается с региона:
+         region (область) → city (город/село) → complex (ЖК) → house (дом)
+           → entrance (подъезд) → floor (этаж) → flat (квартира)
+         panel   — вызывная панель: территория ЖК, дом или подъезд
          account — SIP-аккаунт жильца, живёт внутри квартиры
-         bindings — сквозная связка панель ↔ квартира, задаётся с обеих сторон */
+         bindings — сквозная связка панель ↔ квартира, задаётся с обеих сторон
+
+       ЖК — арендатор: подписка, тариф и лимиты живут на нём, а домов
+       внутри может быть сколько угодно. Один жилец может владеть
+       квартирами в разных домах, поэтому email не уникален в установке —
+       он уникален только внутри квартиры. */
 
     // ===== ТИПЫ УЗЛОВ =====
     // container — у типа есть чекбокс, он участвует в выделении и массовом удалении.
     // acc / created — винительный падеж и род: они попадают в подписи кнопок
     // («Удалить квартиру») и в тексты тостов («Панель создана»).
     const TYPES = {
-      building: {
-        icon: 'location_city', label: 'Жилой комплекс', short: 'ЖК', acc: 'ЖК', newLabel: 'Новый ЖК',
-        created: 'создан', deleted: 'удалён', prefix: 'b', container: true,
+      region: {
+        icon: 'map', label: 'Регион', short: 'регион', acc: 'регион', newLabel: 'Новый регион',
+        created: 'создан', deleted: 'удалён', prefix: 'r', container: true,
+        plural: ['регион', 'региона', 'регионов']
+      },
+      city: {
+        icon: 'location_city', label: 'Населённый пункт', short: 'город', acc: 'населённый пункт',
+        newLabel: 'Новый город или село',
+        created: 'создан', deleted: 'удалён', prefix: 'c', container: true,
+        plural: ['населённый пункт', 'населённых пункта', 'населённых пунктов']
+      },
+      complex: {
+        icon: 'apartment', label: 'Жилой комплекс', short: 'ЖК', acc: 'ЖК', newLabel: 'Новый ЖК',
+        created: 'создан', deleted: 'удалён', prefix: 'k', container: true,
         plural: ['ЖК', 'ЖК', 'ЖК']
+      },
+      house: {
+        icon: 'home_work', label: 'Дом', short: 'дом', acc: 'дом', newLabel: 'Новый дом',
+        created: 'создан', deleted: 'удалён', prefix: 'h', container: true,
+        plural: ['дом', 'дома', 'домов']
       },
       entrance: {
         icon: 'door_front', label: 'Подъезд', short: 'подъезд', acc: 'подъезд', newLabel: 'Новый подъезд',
@@ -2689,7 +2721,14 @@
       }
     };
 
-    const CHILD_TYPE = { building: 'entrance', entrance: 'floor', floor: 'flat', flat: 'account' };
+    const CHILD_TYPE = {
+      region: 'city', city: 'complex', complex: 'house', house: 'entrance',
+      entrance: 'floor', floor: 'flat', flat: 'account'
+    };
+
+    // Уровни, на которых физически стоит вызывная панель: въезд на территорию
+    // ЖК, входная группа дома или дверь подъезда
+    const MOUNT_TYPES = ['complex', 'house', 'entrance'];
 
     const VENDORS = ['Beward', 'BAS-IP', 'Akuvox', 'Fanvil', '2N', 'Другое'];
     const UNLOCKS = ['HTTP/CGI', 'DTMF (#)', 'HTTP + DTMF', 'MQTT', 'по модели'];
@@ -2708,7 +2747,10 @@
     // ===== ХРАНЕНИЕ =====
     // Точка подключения бэкенда: saveState() вызывается из каждой мутации,
     // loadState() — один раз при старте.
-    const PERSIST = true;
+    // Прототип показывают, а не ведут в нём учёт: PERSIST выключен, чтобы
+    // каждое открытие начиналось с демо-набора, а не с чужих правок,
+    // оставшихся в браузере от прошлого показа.
+    const PERSIST = false;
     const STORAGE_KEY = 'sip-setup-v5';
 
     // scopeId — выбранный в шапке ЖК (null = все). Это не фильтр дерева,
@@ -2746,6 +2788,10 @@
         const raw = localStorage.getItem(STORAGE_KEY);
         const data = raw ? JSON.parse(raw) : null;
         if (!data || !Array.isArray(data.root)) return null;
+        // Снимок мог быть снят до появления региона, города и дома, когда
+        // корнем был ЖК с подъездами. Достроить адрес за пользователя нельзя
+        // (регион и город неизвестны), поэтому такой снимок не берём.
+        if (data.root.some(n => !TYPES[n.type])) return null;
         return {
           cfg: Object.assign({}, DEFAULT_CFG, data.cfg || {}),
           root: data.root,
@@ -2798,7 +2844,7 @@
       });
     }
 
-    // Демо на 30 дней — состояние по умолчанию для только что заведённого дома
+    // Демо на 30 дней — состояние по умолчанию для только что заведённого ЖК
     function newSubscription() {
       const in30 = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       return subscription('', '', 'Демо', 'Демо', new Date().toISOString().slice(0, 10), in30, '', '');
@@ -2811,88 +2857,196 @@
       };
     }
 
-    function seed() {
-      state = { cfg: Object.assign({}, DEFAULT_CFG), root: [], bindings: [], scopeId: null };
-      idSeq = 0;
-      seedYurlovsky();
-      seedCityBay();
+    // --- кирпичи демо-набора ---
+    const addTo = (parent, node) => { (parent.children = parent.children || []).push(node); return node; };
+
+    function addPanel(parent, name, sip, ip, cam, online, door) {
+      return addTo(parent, mk(name, 'panel', panelMeta(sip, ip, cam, online, door)));
     }
 
-    // Юрловский проезд, 7А — 6 подъездов, 9 этажей, 215 квартир.
-    // На этаж по подъезду 4 квартиры, на 9 этаже 6-го подъезда — 3: 9*6*4 - 1 = 215.
-    function seedYurlovsky() {
-      const b = mk('Юрловский проезд, 7А', 'building',
-        subscription('УК «Отрадное-Сервис»', 'Д-2026/114', 'Базовый', 'Активна', '2026-03-01', '2027-02-28', 260, 12));
-      const gate = mk('Калитка во двор (главная)', 'panel', panelMeta(9001, '10.0.0.9', 'CAM-01', true));
-      b.children.push(gate);
-
-      for (let e = 1; e <= 6; e++) {
-        const ent = mk('Подъезд ' + e, 'entrance');
-        const panel = mk('Панель подъезда ' + e, 'panel',
-          panelMeta(9000 + e + 1, '10.0.' + e + '.10', 'CAM-' + e + '0', e === 1, 'main-door-' + e));
-        ent.children.push(panel);
-
-        for (let fl = 1; fl <= 9; fl++) {
-          const floor = mk('Этаж ' + fl, 'floor');
-          const count = (e === 6 && fl === 9) ? 3 : 4;
-          for (let k = 1; k <= count; k++) {
-            const no = e * 100 + fl * 10 + k;
-            const flat = mk('Квартира ' + no, 'flat');
-            flat.children.push(account('resident' + no + '@mail.ru', no, 1, no % 2 === 0));
-            // Пара квартир с двумя аккаунтами — чтобы на демо было видно
-            // последовательный дозвон по приоритету
-            // Второй аккаунт получает свой номер: один и тот же subscriber
-            // на два устройства звонил бы параллельно, а не по приоритету
-            if (fl === 1 && k === 1) {
-              flat.children.push(account('resident' + no + '.mobile@mail.ru', 5000 + no, 2, false));
-            }
-            floor.children.push(flat);
-          }
-          ent.children.push(floor);
+    // Подъезд целиком: этажи, квартиры и по аккаунту в каждой. Номер квартиры
+    // и её SIP-номер задаются отдельно: нумерация квартир своя в каждом доме,
+    // а subscriber в Kamailio один на всю установку.
+    function addEntrance(house, name, opts) {
+      const ent = mk(name, 'entrance');
+      for (let fl = 1; fl <= opts.floors; fl++) {
+        const floor = mk('Этаж ' + fl, 'floor');
+        const count = typeof opts.perFloor === 'function' ? opts.perFloor(fl) : opts.perFloor;
+        for (let k = 1; k <= count; k++) {
+          const no = opts.flatNo(fl, k);
+          const sip = opts.sip(no);
+          const flat = mk('Квартира ' + no, 'flat');
+          flat.children.push(account(opts.email(no), sip, 1, sip % 3 === 0));
+          floor.children.push(flat);
         }
-        bindAll(collect(ent, 'flat'), panel.id);
-        b.children.push(ent);
+        ent.children.push(floor);
       }
-      bindAll(collect(b, 'flat'), gate.id);
-      state.root.push(b);
+      return addTo(house, ent);
     }
 
-    // CityBay (Сити Бэй) — 52 этажа, 500 квартир, бизнес-класс.
-    // Квартир на этаж по секциям: этажи 1..42 → [3,3,2,2] = 10, этажи 43..52 → [2,2,2,2] = 8.
-    // Итого 42*10 + 10*8 = 500.
-    function seedCityBay() {
-      const b = mk('CityBay (Сити Бэй)', 'building',
-        subscription('УК «Сити Бэй Менеджмент»', 'Д-2026/207', 'Расширенный (с видеомодулем)', 'Демо', '2026-07-15', '2026-09-15', 520, 10));
-      const gate = mk('Главный вход (Сити Бэй)', 'panel', panelMeta(8101, '10.20.0.9', 'CAM-CB01', false));
-      b.children.push(gate);
+    const firstFlat = (node) => collect(node, 'flat')[0];
 
-      const seg = (fl) => fl <= 42 ? [3, 3, 2, 2] : [2, 2, 2, 2];
-      for (let e = 1; e <= 4; e++) {
-        const ent = mk('Секция ' + e, 'entrance');
-        const panel = mk('Панель секции ' + e, 'panel',
-          panelMeta(8110 + e, '10.20.' + e + '.10', 'CAM-CB' + e + '0', false, 'cb-door-' + e));
-        ent.children.push(panel);
+    // Второй аккаунт в квартире показывает последовательный дозвон.
+    // Номер у него свой: один subscriber на два устройства звонил бы
+    // параллельно, а не в очередь по приоритету.
+    function addSecondAccount(flat, email, sip) {
+      flat.children.push(account(email, sip, 2, false));
+    }
 
-        for (let fl = 1; fl <= 52; fl++) {
-          const floor = mk('Этаж ' + fl, 'floor');
-          const count = seg(fl)[e - 1];
-          for (let k = 1; k <= count; k++) {
-            const no = e * 1000 + fl * 10 + k;
-            const flat = mk('Квартира ' + no, 'flat');
-            flat.children.push(account('cb' + no + '@citybay.ru', no, 1, false));
-            floor.children.push(flat);
-          }
-          ent.children.push(floor);
-        }
-        bindAll(collect(ent, 'flat'), panel.id);
-        b.children.push(ent);
-      }
-      bindAll(collect(b, 'flat'), gate.id);
-      state.root.push(b);
+    // Один собственник владеет квартирами в разных домах и даже в разных ЖК.
+    // Жилец один, а SIP-аккаунт в каждой квартире свой — поэтому email
+    // повторяется, и уникальным он может быть только внутри квартиры.
+    function setOwner(email, flats) {
+      flats.forEach(f => {
+        const acc = (f.children || []).filter(c => c.type === 'account')[0];
+        if (acc) acc.name = email;
+      });
     }
 
     function bindAll(flats, panelId) {
       flats.forEach(f => state.bindings.push({ id: nid('bind'), panelId: panelId, flatId: f.id }));
+    }
+
+    function seed() {
+      state = { cfg: Object.assign({}, DEFAULT_CFG), root: [], bindings: [], scopeId: null };
+      idSeq = 0;
+      const msk = seedMoscow();
+      const obl = seedRegion();
+      // Собственник с квартирами в трёх домах и двух ЖК
+      setOwner('ivanov@mail.ru', [msk.flat7a, msk.flat7b, msk.flatCb]);
+      addSecondAccount(msk.flat7a, 'ivanov.mobile@mail.ru', 5111);
+      // И собственница двух квартир в одном ЖК, но в разных домах
+      setOwner('petrova@mail.ru', [msk.flat7a2, msk.flat7b2]);
+      addSecondAccount(msk.flat7b2, 'petrova.mobile@mail.ru', 5112);
+      // Химкинская квартира того же Иванова — чтобы было видно разные регионы
+      setOwner('ivanov@mail.ru', [obl.flatHimki]);
+    }
+
+    // Москва: два ЖК с несколькими домами в каждом.
+    // «Отрадное» — 7А (6 подъездов × 9 этажей, 215 квартир) и 7Б (2 × 5 × 3 = 30).
+    // CityBay — два корпуса по две секции, 500 квартир на ЖК.
+    function seedMoscow() {
+      const region = mk('Москва', 'region');
+      state.root.push(region);
+      const city = addTo(region, mk('Москва', 'city'));
+
+      const otr = addTo(city, mk('Отрадное', 'complex',
+        subscription('УК «Отрадное-Сервис»', 'Д-2026/114', 'Базовый', 'Активна',
+          '2026-03-01', '2027-02-28', 300, 14)));
+      const otrGate = addPanel(otr, 'Въезд на территорию', 9001, '10.0.0.9', 'CAM-01', true);
+
+      const h7a = addTo(otr, mk('Юрловский проезд, 7А', 'house'));
+      const ent7a = [];
+      for (let e = 1; e <= 6; e++) {
+        const ent = addEntrance(h7a, 'Подъезд ' + e, {
+          floors: 9,
+          perFloor: (fl) => (e === 6 && fl === 9) ? 3 : 4,
+          flatNo: (fl, k) => e * 100 + fl * 10 + k,
+          sip: (no) => no,
+          email: (no) => 'resident' + no + '@mail.ru'
+        });
+        const panel = addPanel(ent, 'Панель подъезда ' + e, 9001 + e,
+          '10.0.' + e + '.10', 'CAM-' + e + '0', e === 1, 'main-door-' + e);
+        bindAll(collect(ent, 'flat'), panel.id);
+        ent7a.push(ent);
+      }
+
+      // Второй дом того же ЖК: своя нумерация квартир, свой блок SIP-номеров
+      const h7b = addTo(otr, mk('Юрловский проезд, 7Б', 'house'));
+      const door7b = addPanel(h7b, 'Юрловский, 7Б — входная группа', 9010, '10.0.7.9', 'CAM-7B', false);
+      const ent7b = [];
+      let no7b = 0;
+      for (let e = 1; e <= 2; e++) {
+        const ent = addEntrance(h7b, 'Подъезд ' + e, {
+          floors: 5, perFloor: 3,
+          flatNo: () => ++no7b,
+          sip: (no) => 7100 + no,
+          email: (no) => 'jurlovsky7b' + no + '@mail.ru'
+        });
+        const panel = addPanel(ent, 'Панель подъезда ' + e + ' (7Б)', 9010 + e,
+          '10.0.7.' + (10 + e), 'CAM-7B' + e, false, 'door-7b-' + e);
+        bindAll(collect(ent, 'flat'), panel.id);
+        ent7b.push(ent);
+      }
+      bindAll(collect(h7b, 'flat'), door7b.id);
+      bindAll(collect(otr, 'flat'), otrGate.id);
+
+      const cb = addTo(city, mk('CityBay (Сити Бэй)', 'complex',
+        subscription('УК «Сити Бэй Менеджмент»', 'Д-2026/207', 'Расширенный (с видеомодулем)', 'Демо',
+          '2026-07-15', '2026-09-15', 520, 10)));
+      const cbGate = addPanel(cb, 'Главный въезд (Сити Бэй)', 8101, '10.20.0.9', 'CAM-CB01', false);
+
+      const seg = (fl) => fl <= 42 ? [3, 3, 2, 2] : [2, 2, 2, 2];
+      const cbSections = [];
+      [1, 2].forEach(korp => {
+        const house = addTo(cb, mk('Корпус ' + korp, 'house'));
+        [korp * 2 - 1, korp * 2].forEach(e => {
+          const ent = addEntrance(house, 'Секция ' + e, {
+            floors: 52,
+            perFloor: (fl) => seg(fl)[e - 1],
+            flatNo: (fl, k) => e * 1000 + fl * 10 + k,
+            sip: (no) => no,
+            email: (no) => 'cb' + no + '@citybay.ru'
+          });
+          const panel = addPanel(ent, 'Панель секции ' + e, 8110 + e,
+            '10.20.' + e + '.10', 'CAM-CB' + e + '0', false, 'cb-door-' + e);
+          bindAll(collect(ent, 'flat'), panel.id);
+          cbSections.push(ent);
+        });
+      });
+      bindAll(collect(cb, 'flat'), cbGate.id);
+
+      return {
+        flat7a: firstFlat(ent7a[0]),
+        flat7a2: collect(ent7a[0], 'flat')[1],
+        flat7b: firstFlat(ent7b[0]),
+        flat7b2: collect(ent7b[0], 'flat')[1],
+        flatCb: firstFlat(cbSections[0])
+      };
+    }
+
+    // Московская область: город и село — чтобы было видно, что уровень
+    // населённого пункта не про «города» вообще, а про адрес
+    function seedRegion() {
+      const region = mk('Московская область', 'region');
+      state.root.push(region);
+
+      const himki = addTo(region, mk('Химки', 'city'));
+      const nh = addTo(himki, mk('Новые Химки', 'complex',
+        subscription('УК «Химки-Жилсервис»', 'Д-2025/88', 'Базовый', 'Приостановлена',
+          '2025-09-01', '2026-08-31', 40, 6)));
+      const nhHouse = addTo(nh, mk('ул. Молодёжная, 3', 'house'));
+      let noHimki = 0;
+      const himkiEnts = [];
+      for (let e = 1; e <= 2; e++) {
+        const ent = addEntrance(nhHouse, 'Подъезд ' + e, {
+          floors: 4, perFloor: 2,
+          flatNo: () => ++noHimki,
+          sip: (no) => 7300 + no,
+          email: (no) => 'himki' + no + '@mail.ru'
+        });
+        const panel = addPanel(ent, 'Панель подъезда ' + e + ' (Молодёжная)', 7000 + e,
+          '10.30.' + e + '.10', 'CAM-HM' + e, false, 'hm-door-' + e);
+        bindAll(collect(ent, 'flat'), panel.id);
+        himkiEnts.push(ent);
+      }
+
+      const village = addTo(region, mk('село Ивановское', 'city'));
+      const dachi = addTo(village, mk('Ивановские дачи', 'complex',
+        subscription('ТСЖ «Ивановское»', 'Д-2026/12', 'Базовый', 'Активна',
+          '2026-05-01', '2027-04-30', '', '')));
+      const dachiHouse = addTo(dachi, mk('ул. Центральная, 1', 'house'));
+      let noVillage = 0;
+      const dachiEnt = addEntrance(dachiHouse, 'Подъезд 1', {
+        floors: 2, perFloor: 2,
+        flatNo: () => ++noVillage,
+        sip: (no) => 7400 + no,
+        email: (no) => 'ivanovskoe' + no + '@mail.ru'
+      });
+      const dachiPanel = addPanel(dachiEnt, 'Панель у входа', 7101, '10.40.1.10', 'CAM-IV1', false, 'iv-door-1');
+      bindAll(collect(dachiEnt, 'flat'), dachiPanel.id);
+
+      return { flatHimki: firstFlat(himkiEnts[0]) };
     }
 
     // ===== ИНДЕКС ДЕРЕВА =====
@@ -2981,17 +3135,27 @@
       return out;
     }
 
-    // ЖК, которому принадлежит объект: корень его пути. Это граница арендатора,
-    // по ней ограничиваются кандидаты в привязках.
-    function buildingOf(id) {
+    // ЖК, которому принадлежит объект. Это граница арендатора: по ней
+    // ограничиваются кандидаты в привязках и выгрузка провижининга.
+    // Регион и город арендаторами не являются — они часть адреса.
+    function complexOf(id) {
       let cur = findNode(id);
-      if (!cur) return null;
-      let parent = parentOf(cur.id);
-      while (parent) {
-        cur = parent;
-        parent = parentOf(cur.id);
+      while (cur) {
+        if (cur.type === 'complex') return cur;
+        cur = parentOf(cur.id);
       }
-      return cur;
+      return null;
+    }
+
+    // Дом, в котором стоит объект: внутри ЖК их может быть несколько,
+    // и «свой дом» — естественный порядок в списках кандидатов
+    function houseOf(id) {
+      let cur = findNode(id);
+      while (cur) {
+        if (cur.type === 'house') return cur;
+        cur = parentOf(cur.id);
+      }
+      return null;
     }
 
     function scopeBindingCount() {
@@ -3002,8 +3166,9 @@
     }
 
     // ===== ПОДПИСКА ЖК =====
-    // ЖК продаётся управляющей компании как подписка на дом, поэтому у него
-    // есть срок и лимиты. Экран обязан показывать их до того, как упрутся.
+    // ЖК продаётся управляющей компании как подписка на весь комплекс, поэтому
+    // у него есть срок и лимиты, общие на все дома внутри. Экран обязан
+    // показывать их до того, как в них упрутся.
     const todayISO = () => new Date().toISOString().slice(0, 10);
 
     const subStatus = (b) => (b.meta && b.meta.status) || 'Активна';
@@ -3013,7 +3178,7 @@
     // Короткая причина, по которой ЖК не в порядке: она же идёт в чип дерева,
     // в строку состояния и в плашку карточки
     function subIssue(b) {
-      if (!b || b.type !== 'building') return null;
+      if (!b || b.type !== 'complex') return null;
       const status = subStatus(b);
       if (status === 'Приостановлена') return 'приостановлена';
       if (status === 'Завершена') return 'завершена';
@@ -3054,8 +3219,21 @@
     }
 
     const pathText = (id) => pathOf(id).map(n => n.name).join(' › ');
-    // Расположение панели — путь без самой панели
-    const locationText = (id) => pathOf(id).slice(0, -1).map(n => n.name).join(' › ') || '—';
+
+    // Расположение объекта в строке списка: путь без региона и города —
+    // они одни на весь ЖК и в узкой колонке только съедали бы место.
+    // Полный адрес всегда виден в хлебных крошках карточки.
+    const locationText = (id) => pathOf(id).slice(0, -1)
+      .filter(n => n.type !== 'region' && n.type !== 'city')
+      .map(n => n.name).join(' › ') || '—';
+
+    // Место монтажа панели внутри ЖК: дом и подъезд без названия самого ЖК
+    function mountPath(id) {
+      const path = pathOf(id).slice(0, -1);
+      const at = path.findIndex(n => n.type === 'complex');
+      const tail = path.slice(at + 1).map(n => n.name).join(' › ');
+      return tail || 'вся территория';
+    }
 
     function siblingsOf(id) {
       const parent = parentOf(id);
@@ -3237,8 +3415,25 @@
 
     function autoDescription(n) {
       const kids = n.children || [];
-      if (n.type === 'building') {
-        return n.name + ' — жилой комплекс: ' + countText(kids.filter(c => c.type === 'entrance').length, 'entrance') +
+      if (n.type === 'region') {
+        return n.name + ' — ' + countText(kids.filter(c => c.type === 'city').length, 'city') +
+          ', ' + countText(collect(n, 'complex').length, 'complex') +
+          ', ' + countText(collect(n, 'house').length, 'house') +
+          ', ' + countText(collect(n, 'flat').length, 'flat') + '.';
+      }
+      if (n.type === 'city') {
+        return n.name + ' — ' + countText(kids.filter(c => c.type === 'complex').length, 'complex') +
+          ', ' + countText(collect(n, 'house').length, 'house') +
+          ', ' + countText(collect(n, 'flat').length, 'flat') +
+          ', ' + countText(collect(n, 'panel').length, 'panel') + '.';
+      }
+      if (n.type === 'complex') {
+        return n.name + ' — жилой комплекс: ' + countText(kids.filter(c => c.type === 'house').length, 'house') +
+          ', ' + countText(collect(n, 'entrance').length, 'entrance') + ', ' + countText(collect(n, 'flat').length, 'flat') +
+          ', ' + countText(collect(n, 'panel').length, 'panel') + '.';
+      }
+      if (n.type === 'house') {
+        return n.name + ' — ' + countText(kids.filter(c => c.type === 'entrance').length, 'entrance') +
           ', ' + countText(collect(n, 'floor').length, 'floor') + ', ' + countText(collect(n, 'flat').length, 'flat') +
           ', ' + countText(collect(n, 'panel').length, 'panel') + '.';
       }
@@ -3268,7 +3463,7 @@
         return TYPES.account.label + ' · ' + n.name + ' · ' + n.meta.sipNumber + '@' + state.cfg.realm +
           ' · приоритет ' + n.meta.priority + ' · ' + reg(n);
       }
-      if (n.type === 'building') {
+      if (n.type === 'complex') {
         const issue = subIssue(n);
         return nodeDescription(n) + ' Подписка: ' + subStatus(n) +
           (n.meta.until ? ', до ' + n.meta.until : '') + (issue ? ' — ' + issue : '') + '.';
@@ -3300,8 +3495,10 @@
     }
 
     function searchText(n) {
+      // В поиск панели входит весь адрес, включая регион и город: искать
+      // «Химки» и не находить стоящую там панель было бы странно
       if (n.type === 'panel') {
-        return [n.name, n.meta.sipNumber, n.meta.vendor, n.meta.model, n.meta.ip, locationText(n.id)]
+        return [n.name, n.meta.sipNumber, n.meta.vendor, n.meta.model, n.meta.ip, pathText(n.id)]
           .filter(Boolean).join(' ').toLowerCase();
       }
       if (n.type === 'account') {
@@ -3396,11 +3593,11 @@
       return '<span class="status-dot ' + cls + '" title="' + title + '"></span>';
     }
 
-    // Панели ЖК и подъезда собраны на отдельную полку перед подъездами:
+    // Панели территории, дома и подъезда собраны на отдельную полку:
     // принадлежность панели видна там же, где на неё смотрят, и за ней
     // не нужно уходить в отдельный список
     function panelGroupHtml(parent, level) {
-      if (parent.type !== 'building' && parent.type !== 'entrance') return '';
+      if (MOUNT_TYPES.indexOf(parent.type) === -1) return '';
       const panels = (parent.children || []).filter(c => c.type === 'panel');
       if (!panels.length) return '';
       return '<li class="tree-node tree-group has-children open level-' + level + '"' +
@@ -3434,12 +3631,12 @@
         return '<div class="empty-state">' +
           '<span class="material-symbols-outlined">doorbell</span>' +
           '<div class="title">Панелей нет</div>' +
-          '<div class="sub">Нажмите «Добавить», чтобы поставить вызывную панель у ЖК или подъезда</div></div>';
+          '<div class="sub">Нажмите «Добавить», чтобы поставить вызывную панель у территории, дома или подъезда</div></div>';
       }
       return '<div class="empty-state">' +
-        '<span class="material-symbols-outlined">location_city</span>' +
-        '<div class="title">Жилых комплексов нет</div>' +
-        '<div class="sub">Нажмите «Добавить», чтобы создать первый ЖК</div></div>';
+        '<span class="material-symbols-outlined">map</span>' +
+        '<div class="title">Адресов нет</div>' +
+        '<div class="sub">Нажмите «Добавить», чтобы создать регион, а внутри него — город и ЖК</div></div>';
     }
 
     function rebuildTree() {
@@ -3555,9 +3752,9 @@
       const issue = scoped ? subIssue(scoped) : null;
       const head = scoped
         ? '<span title="Показан один ЖК — переключается в шапке">' + escapeHtml(scoped.name) + '</span>' +
-          '<span class="sep">·</span><span title="Состояние подписки на этот дом">подписка ' +
+          '<span class="sep">·</span><span title="Состояние подписки на этот ЖК">подписка ' +
           escapeHtml(issue || subStatus(scoped).toLowerCase()) + '</span>'
-        : '<span>' + countText(state.root.length, 'building') + '</span>';
+        : '<span title="Всего ЖК в установке">' + countText(collectScope('complex').length, 'complex') + '</span>';
 
       if (lens === 'equip') {
         const panels = collectScope('panel');
@@ -3570,7 +3767,7 @@
         return;
       }
       treeStatus.innerHTML = head + sep +
-        '<span>' + countText(collectScope('entrance').length, 'entrance') + '</span>' + sep +
+        '<span>' + countText(collectScope('house').length, 'house') + '</span>' + sep +
         '<span>' + countText(collectScope('flat').length, 'flat') + '</span>' + sep +
         '<span>' + countText(collectScope('account').length, 'account') + '</span>' + sep +
         '<span>' + countText(collectScope('panel').length, 'panel') + '</span>';
@@ -3836,7 +4033,7 @@
       if (!n) return;
       // Ссылка может вести в другой ЖК (например, из таблицы парка по всем ЖК).
       // Область видимости переносится туда же, иначе узла в дереве просто нет.
-      const home = buildingOf(id);
+      const home = complexOf(id);
       if (state.scopeId && home && home.id !== state.scopeId) setScope(home.id, true);
       if (lens === 'equip' && n.type !== 'panel') setLens('addr', true);
 
@@ -3880,7 +4077,10 @@
 
       renderBreadcrumb(n);
 
-      if (n.type === 'building') renderBuilding(n);
+      if (n.type === 'region') renderRegion(n);
+      else if (n.type === 'city') renderCity(n);
+      else if (n.type === 'complex') renderComplex(n);
+      else if (n.type === 'house') renderHouse(n);
       else if (n.type === 'entrance') renderEntrance(n);
       else if (n.type === 'floor') renderFloor(n);
       else if (n.type === 'flat') renderFlat(n);
@@ -3967,7 +4167,7 @@
 
     const FLEET_COLS = [
       { key: 'name', label: 'Панель' },
-      { key: 'building', label: 'ЖК' },
+      { key: 'complex', label: 'ЖК' },
       { key: 'place', label: 'Место установки' },
       { key: 'sip', label: 'SIP' },
       { key: 'ip', label: 'IP' },
@@ -3986,8 +4186,9 @@
       return collectScope('panel').map(p => ({
         id: p.id,
         name: p.name,
-        building: (buildingOf(p.id) || {}).name || '—',
-        place: locationText(p.id),
+        complex: (complexOf(p.id) || {}).name || '—',
+        city: (pathOf(p.id).filter(n => n.type === 'city')[0] || {}).name || '',
+        place: mountPath(p.id),
         sip: p.meta.sipNumber || '',
         ip: p.meta.ip || '',
         model: [p.meta.vendor, p.meta.model].filter(Boolean).join(' '),
@@ -4005,7 +4206,7 @@
       const q = fleet.query.toLowerCase().trim();
       const rows = all.filter(r =>
         (fleet.status === 'all' || (fleet.status === 'online') === r.online) &&
-        (!q || [r.name, r.building, r.place, r.sip, r.ip, r.model].join(' ').toLowerCase().includes(q)));
+        (!q || [r.name, r.complex, r.city, r.place, r.sip, r.ip, r.model].join(' ').toLowerCase().includes(q)));
 
       const dir = fleet.dir === 'asc' ? 1 : -1;
       rows.sort((a, b) => {
@@ -4019,7 +4220,7 @@
         '<tr data-goto="' + r.id + '" title="Открыть карточку панели">' +
           '<td><span class="cell-name"><span class="material-symbols-outlined">doorbell</span>' +
             escapeHtml(r.name) + '</span></td>' +
-          '<td>' + escapeHtml(r.building) + '</td>' +
+          '<td>' + escapeHtml(r.complex) + (r.city ? '<div class="sub muted">' + escapeHtml(r.city) + '</div>' : '') + '</td>' +
           '<td class="muted">' + escapeHtml(r.place) + '</td>' +
           '<td class="mono">' + escapeHtml(r.sip || '—') + '</td>' +
           '<td class="mono">' + escapeHtml(r.ip || '—') + '</td>' +
@@ -4137,8 +4338,69 @@
         num('Лимит панелей', 'limitPanels', m.limitPanels, 'без лимита');
     }
 
-    function renderBuilding(n) {
-      const entrances = (n.children || []).filter(c => c.type === 'entrance');
+    // Регион и населённый пункт — это только адрес: ни подписки, ни
+    // оборудования на них нет, поэтому карточка сводит статистику вниз
+    function renderRegion(n) {
+      const cities = (n.children || []).filter(c => c.type === 'city');
+      cardStats.innerHTML =
+        statHtml('location_city', cities.length, 'Городов и сёл', 'Населённые пункты региона') +
+        statHtml('apartment', collect(n, 'complex').length, 'ЖК', 'Жилые комплексы во всём регионе') +
+        statHtml('home_work', collect(n, 'house').length, 'Домов', 'Дома во всех ЖК региона') +
+        statHtml('home', collect(n, 'flat').length, 'Квартир', 'Квартиры во всём регионе');
+
+      defineList('cities', {
+        items: cities,
+        text: (x) => x.name,
+        renderItem: (x) => nodeRow(x, '<span class="meta">' + countText(collect(x, 'complex').length, 'complex') + '</span>'),
+        empty: 'Городов и сёл нет'
+      });
+
+      cardSections.innerHTML =
+        listSectionHtml({
+          key: 'cities', icon: 'location_city', title: 'Города и села', placeholder: 'Поиск по названию...',
+          actions: [{ action: 'add-child', icon: 'add', title: 'Добавить город или село' }]
+        }) +
+        '<div class="detail-section"><div class="section-title">' +
+          '<span class="material-symbols-outlined">public</span>Адрес</div>' +
+          '<div class="note-row"><span class="material-symbols-outlined">info</span>' +
+          '<div>Страна одна — Российская Федерация, поэтому в дереве её нет: ' +
+          'адрес начинается с региона. Ниже региона идут населённый пункт, ЖК и дома.' +
+          '</div></div></div>';
+    }
+
+    function renderCity(n) {
+      const complexes = (n.children || []).filter(c => c.type === 'complex');
+      const issues = complexes.filter(c => subIssue(c)).length;
+
+      cardStats.innerHTML =
+        statHtml('apartment', complexes.length, 'ЖК', 'Жилые комплексы в этом населённом пункте') +
+        statHtml('home_work', collect(n, 'house').length, 'Домов', 'Дома во всех ЖК') +
+        statHtml('home', collect(n, 'flat').length, 'Квартир', 'Квартиры во всех домах') +
+        statHtml('workspace_premium', issues, 'С проблемой подписки',
+          'ЖК, у которых подписка приостановлена, завершена или просрочена', !!issues);
+
+      defineList('complexes', {
+        items: complexes,
+        text: (x) => x.name,
+        renderItem: (x) => {
+          const issue = subIssue(x);
+          return nodeRow(x,
+            (issue ? '<span class="pill warn">' + escapeHtml(issue) + '</span>' : '') +
+            '<span class="meta">' + countText(collect(x, 'house').length, 'house') + '</span>');
+        },
+        empty: 'ЖК нет'
+      });
+
+      cardSections.innerHTML = listSectionHtml({
+        key: 'complexes', icon: 'apartment', title: 'Жилые комплексы', placeholder: 'Поиск ЖК...',
+        actions: [{ action: 'add-child', icon: 'add', title: 'Добавить ЖК' }]
+      });
+    }
+
+    // ЖК — арендатор: подписка, тариф и лимиты живут здесь, а домов внутри
+    // может быть несколько, и лимиты считаются на весь комплекс
+    function renderComplex(n) {
+      const houses = (n.children || []).filter(c => c.type === 'house');
       const panels = (n.children || []).filter(c => c.type === 'panel');
       const flatUse = usage(n, 'flat');
       const panelUse = usage(n, 'panel');
@@ -4146,30 +4408,32 @@
 
       cardStats.innerHTML =
         statHtml('workspace_premium', subStatus(n), 'Подписка',
-          'Состояние подписки на этот дом' + (n.meta.until ? ' · до ' + n.meta.until : ''), true) +
-        statHtml('door_front', entrances.length, 'Подъездов', 'Подъезды непосредственно в ЖК') +
+          'Состояние подписки на этот ЖК' + (n.meta.until ? ' · до ' + n.meta.until : ''), true) +
+        statHtml('home_work', houses.length, 'Домов', 'Дома, входящие в ЖК') +
         statHtml('home', usageText(flatUse), 'Квартир',
-          flatUse.limit ? 'Заведено квартир против лимита тарифа' : 'Квартиры во всех подъездах', !!flatUse.limit) +
+          flatUse.limit ? 'Заведено квартир против лимита тарифа' : 'Квартиры во всех домах ЖК', !!flatUse.limit) +
         statHtml('doorbell', usageText(panelUse), 'Панелей',
           panelUse.limit ? 'Заведено панелей против лимита тарифа' : 'Все панели ЖК, включая подъездные', !!panelUse.limit);
 
-      defineList('ent', {
-        items: entrances,
+      defineList('houses', {
+        items: houses,
         text: (x) => x.name,
-        renderItem: (x) => nodeRow(x, '<span class="meta">' + countText(collect(x, 'flat').length, 'flat') + '</span>'),
-        empty: 'Подъездов нет'
+        renderItem: (x) => nodeRow(x,
+          '<span class="meta">' + countText(collect(x, 'entrance').length, 'entrance') + '</span>' +
+          '<span class="meta">' + countText(collect(x, 'flat').length, 'flat') + '</span>'),
+        empty: 'Домов нет'
       });
       defineList('bpanels', {
         items: panels,
         text: (x) => x.name + ' ' + (x.meta.sipNumber || ''),
         renderItem: (x) => panelRow(x),
-        empty: 'Панелей на уровне ЖК нет'
+        empty: 'Панелей на территории ЖК нет'
       });
 
       const alerts = [];
       if (issue) {
         alerts.push('Подписка ' + issue + (n.meta.until ? ' (' + n.meta.until + ')' : '') +
-          '. Дом остаётся в системе, но на продление его надо вывести до отключения провижининга.');
+          '. ЖК остаётся в системе, но на продление его надо вывести до отключения провижининга.');
       }
       if (limitReached(n, 'flat')) alerts.push('Достигнут лимит квартир по тарифу: ' + usageText(flatUse) + '.');
       if (limitReached(n, 'panel')) alerts.push('Достигнут лимит панелей по тарифу: ' + usageText(panelUse) + '.');
@@ -4182,14 +4446,51 @@
           : '') +
         '<div class="detail-section"><div class="section-title">' +
           '<span class="material-symbols-outlined">workspace_premium</span>Подписка и договор</div>' +
-          '<div class="form-grid">' + subFieldsHtml(n) + '</div></div>' +
+          '<div class="form-grid">' + subFieldsHtml(n) + '</div>' +
+          '<div class="note-row"><span class="material-symbols-outlined">info</span>' +
+          '<div>Лимиты тарифа считаются на весь ЖК, а не на отдельный дом: ' +
+          'квартиры и панели всех домов складываются.</div></div></div>' +
+        listSectionHtml({
+          key: 'houses', icon: 'home_work', title: 'Дома', placeholder: 'Поиск домов...',
+          actions: [{ action: 'add-child', icon: 'add', title: 'Добавить дом' }]
+        }) +
+        listSectionHtml({
+          key: 'bpanels', icon: 'doorbell', title: 'Панели территории', placeholder: 'Поиск панелей...',
+          actions: [{ action: 'add-panel', icon: 'add', title: 'Добавить панель на территорию ЖК' }]
+        });
+    }
+
+    function renderHouse(n) {
+      const entrances = (n.children || []).filter(c => c.type === 'entrance');
+      const panels = (n.children || []).filter(c => c.type === 'panel');
+
+      cardStats.innerHTML =
+        statHtml('door_front', entrances.length, 'Подъездов', 'Подъезды этого дома') +
+        statHtml('layers', collect(n, 'floor').length, 'Этажей', 'Этажи во всех подъездах дома') +
+        statHtml('home', collect(n, 'flat').length, 'Квартир', 'Квартиры во всём доме') +
+        statHtml('doorbell', collect(n, 'panel').length, 'Панелей', 'Панели дома и его подъездов');
+
+      defineList('ent', {
+        items: entrances,
+        text: (x) => x.name,
+        renderItem: (x) => nodeRow(x, '<span class="meta">' + countText(collect(x, 'flat').length, 'flat') + '</span>'),
+        empty: 'Подъездов нет'
+      });
+      defineList('hpanels', {
+        items: panels,
+        text: (x) => x.name + ' ' + (x.meta.sipNumber || ''),
+        renderItem: (x) => panelRow(x),
+        empty: 'Панелей у входа в дом нет'
+      });
+
+      cardSections.innerHTML =
         listSectionHtml({
           key: 'ent', icon: 'door_front', title: 'Подъезды', placeholder: 'Поиск подъездов...',
           actions: [{ action: 'add-child', icon: 'add', title: 'Добавить подъезд' }]
         }) +
         listSectionHtml({
-          key: 'bpanels', icon: 'doorbell', title: 'Панели ЖК', placeholder: 'Поиск панелей...',
-          actions: [{ action: 'add-panel', icon: 'add', title: 'Добавить панель в этот ЖК' }]
+          key: 'hpanels', icon: 'doorbell', title: 'Панели дома', placeholder: 'Поиск панелей...',
+          actions: [{ action: 'add-panel', icon: 'add', title: 'Добавить панель к этому дому' }]
         });
     }
 
@@ -4333,17 +4634,18 @@
     function mountLabel(n) {
       const place = parentOf(n.id);
       if (!place) return '—';
-      if (place.type === 'building') return 'Весь ЖК';
-      return place.name;
+      if (place.type === 'complex') return 'Территория ЖК';
+      return mountPath(n.id);
     }
 
     function renderPanel(n) {
       const m = n.meta;
       const binds = bindingsOfPanel(n.id);
-      const home = buildingOf(n.id);
+      const home = complexOf(n.id);
 
       cardStats.innerHTML =
-        statHtml('location_on', mountLabel(n), 'Где стоит', 'Уровень монтажа: калитка ЖК или дверь подъезда', true) +
+        statHtml('location_on', mountLabel(n), 'Где стоит',
+          'Уровень монтажа: въезд на территорию, вход в дом или дверь подъезда', true) +
         statHtml('home', binds.length, 'Кого вызывает', 'Квартиры, куда идёт звонок с этой панели') +
         statHtml('dialpad', m.sipNumber || '—', 'SIP-номер', 'Номер subscriber\'а панели в Kamailio', true) +
         statHtml('wifi_tethering', isBlocked(n) ? 'Заблокирована' : (isOnline(n) ? 'Онлайн' : 'Офлайн'),
@@ -4412,12 +4714,24 @@
       const m = n.meta;
       const flat = parentOf(n.id);
       const siblings = flat ? (flat.children || []).filter(c => c.type === 'account') : [];
+      const others = otherFlatsOfOwner(n);
 
       cardStats.innerHTML =
         statHtml('low_priority', 'п' + m.priority, 'Приоритет дозвона', 'Порядок вызова среди аккаунтов квартиры', true) +
         statHtml('dialpad', m.sipNumber, 'SIP-номер', 'Номер subscriber\'а в Kamailio', true) +
         statHtml('wifi_tethering', isBlocked(n) ? 'Заблокирована' : (isOnline(n) ? 'Онлайн' : 'Офлайн'),
-          'Регистрация', 'Состояние регистрации приходит из Kamailio, из интерфейса не переключается', true);
+          'Регистрация', 'Состояние регистрации приходит из Kamailio, из интерфейса не переключается', true) +
+        statHtml('home_work', others.length + 1, 'Квартир у жильца',
+          'Квартиры, где встречается этот email: собственность может быть в разных домах');
+
+      // Собственник нескольких квартир — норма, и в каждой у него свой
+      // аккаунт со своим номером. Список нужен, чтобы это было видно.
+      defineList('owner', {
+        items: others,
+        text: (x) => x.name + ' ' + locationText(x.id),
+        renderItem: (x) => flatRow(x),
+        empty: 'Других квартир у этого жильца нет'
+      });
 
       cardSections.innerHTML =
         '<div class="detail-section"><div class="section-title">' +
@@ -4438,11 +4752,13 @@
           registrationFieldHtml(n) +
           blockFieldHtml(n) +
         '</div></div>' +
+        listSectionHtml({ key: 'owner', icon: 'home_work', title: 'Другие квартиры жильца', search: false }) +
         '<div class="detail-section"><div class="section-title">' +
           '<span class="material-symbols-outlined">call</span>Дозвон в квартире</div>' +
           '<div class="note-row"><span class="material-symbols-outlined">info</span>' +
           '<div>В квартире ' + countText(siblings.length, 'account') + '. Панель обходит их по возрастанию приоритета, ' +
-          'этот аккаунт — ' + m.priority + '-й в очереди.</div></div></div>';
+          'этот аккаунт — ' + m.priority + '-й в очереди. Один и тот же email может быть в нескольких квартирах: ' +
+          'это один собственник, но учётки и номера у них разные.</div></div></div>';
     }
 
     // ===== МОДАЛЬНОЕ ОКНО =====
@@ -4616,6 +4932,7 @@
     function suggestName(parentId, type) {
       const parent = findNode(parentId);
       const kids = parent ? (parent.children || []).filter(c => c.type === type) : [];
+      if (type === 'house') return 'Корпус ' + nextNumber(kids, 'Корпус');
       if (type === 'entrance') return 'Подъезд ' + nextNumber(kids, 'Подъезд');
       if (type === 'floor') return 'Этаж ' + nextNumber(kids, 'Этаж');
       if (type === 'flat') {
@@ -4627,17 +4944,30 @@
       return '';
     }
 
+    // Подписи поля названия по уровням: «Название» для региона и адрес для
+    // дома — разные вещи, и подсказка должна это показывать
+    const CREATE_FIELD = {
+      region: { label: 'Название региона', hint: 'напр. Московская область' },
+      city: { label: 'Название города или села', hint: 'напр. Химки или село Ивановское' },
+      complex: { label: 'Название ЖК', hint: 'напр. Отрадное' },
+      house: { label: 'Адрес или название дома', hint: 'напр. Юрловский проезд, 7А' }
+    };
+
     function openCreateNodeModal(type, parentId) {
       const t = TYPES[type];
       const parent = parentId ? findNode(parentId) : null;
+      const fld = CREATE_FIELD[type] || { label: 'Название', hint: 'напр. ' + t.label + ' 1' };
+      const hint = type === 'complex'
+        ? 'ЖК — арендатор: у него своя подписка, тариф и лимиты, а домов внутри может быть сколько угодно.'
+        : (parent
+          ? 'Будет создан вложенный узел внутри «' + escapeHtml(parent.name) + '».'
+          : 'Страна одна — РФ, поэтому адрес начинается с региона. Города и ЖК добавляются внутрь него.');
       openModal(
         parent ? t.newLabel + ' в «' + parent.name + '»' : t.newLabel,
-        '<div class="modal-field"><label>' + (type === 'building' ? 'Адрес или название ЖК' : 'Название') + '</label>' +
+        '<div class="modal-field"><label>' + escapeHtml(fld.label) + '</label>' +
           '<input type="text" class="modal-name-input" id="mName" maxlength="80" value="' + escapeHtml(suggestName(parentId, type)) + '"' +
-          ' placeholder="' + (type === 'building' ? 'напр. Юрловский проезд, 7А' : 'напр. ' + t.label + ' 1') + '" /></div>' +
-        '<div class="modal-hint">' + (parent
-          ? 'Будет создан вложенный узел внутри «' + escapeHtml(parent.name) + '».'
-          : 'Будет создан корневой ЖК: арендатор с собственной подпиской, тарифом и лимитами.') + '</div>' +
+          ' placeholder="' + escapeHtml(fld.hint) + '" /></div>' +
+        '<div class="modal-hint">' + hint + '</div>' +
         '<div class="modal-error" id="mErr"></div>',
         ghostBtn('Отмена') + primaryBtn('mOk', 'Создать')
       );
@@ -4647,14 +4977,14 @@
         const name = input.value.trim();
         if (!name) { input.focus(); return; }
         if (type === 'flat') {
-          const err = limitError(buildingOf(parentId), 'flat');
+          const err = limitError(complexOf(parentId), 'flat');
           if (err) { showModalError('mErr', err); return; }
         }
         clearModalError('mErr', [input]);
         closeModal();
         // Новый ЖК заводится демо-подпиской, а не «просто папкой»: без срока
         // и тарифа его нельзя ни продлить, ни выставить в счёт
-        const node = mk(name, type, type === 'building' ? newSubscription() : null);
+        const node = mk(name, type, type === 'complex' ? newSubscription() : null);
         (parent ? (parent.children = parent.children || []) : state.root).push(node);
         reindex();
         saveState();
@@ -4669,9 +4999,11 @@
     }
 
     // ===== ПРОВЕРКИ, КОТОРЫЕ ДЕЛАЕТ БЭКЕНД =====
-    // SIPManager проверяет уникальность email (по нему же ищутся push-подписки),
-    // а Kamailio держит одного subscriber на номер в realm. Ловить это надо
-    // здесь: иначе провижининг падает на половине выгрузки.
+    // Kamailio держит одного subscriber на номер в realm, поэтому SIP-номер
+    // уникален на всю установку. С email иначе: один собственник владеет
+    // квартирами в разных домах и ЖК, у каждой свой аккаунт, и запрет
+    // повтора email просто закрыл бы такому жильцу вторую квартиру.
+    // Бессмысленен только дубль внутри одной квартиры — его и ловим.
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     function sipTaken(num, exceptId) {
@@ -4680,14 +5012,30 @@
         .some(n => n.id !== exceptId && String(n.meta.sipNumber) === v);
     }
 
-    function emailTaken(email, exceptId) {
-      const v = String(email).trim().toLowerCase();
-      return collectAll('account').some(a => a.id !== exceptId && String(a.name).trim().toLowerCase() === v);
+    const sameEmail = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+
+    function emailTakenInFlat(email, flatId, exceptId) {
+      const flat = findNode(flatId);
+      if (!flat) return false;
+      return (flat.children || []).some(a => a.type === 'account' && a.id !== exceptId && sameEmail(a.name, email));
     }
 
-    function emailError(email, exceptId) {
+    // Другие квартиры того же жильца: в карточке это единственный способ
+    // увидеть, что человек владеет несколькими квартирами
+    function otherFlatsOfOwner(account) {
+      const flat = parentOf(account.id);
+      return collectAll('account')
+        .filter(a => a.id !== account.id && sameEmail(a.name, account.name))
+        .map(a => parentOf(a.id))
+        .filter(f => f && (!flat || f.id !== flat.id))
+        .filter((f, i, arr) => arr.findIndex(x => x.id === f.id) === i);
+    }
+
+    function emailError(email, exceptId, flatId) {
       if (!EMAIL_RE.test(String(email).trim())) return 'Нужен корректный email: по нему SIPManager находит push-подписки';
-      if (emailTaken(email, exceptId)) return 'Аккаунт с таким email уже есть — email уникален на всю установку';
+      if (emailTakenInFlat(email, flatId, exceptId)) {
+        return 'В этой квартире уже есть аккаунт с таким email';
+      }
       return '';
     }
 
@@ -4713,23 +5061,28 @@
       return String(v);
     }
 
-    // Уровень монтажа задаёт и смысл панели, и её имя: у ЖК это калитка
-    // или въезд, у подъезда — дверь конкретного подъезда
+    // Уровень монтажа задаёт и смысл панели, и её имя: на территории это
+    // въезд или калитка, у дома — входная группа, у подъезда — его дверь
     function suggestPanelName(placeId) {
       const place = findNode(placeId);
       if (!place) return '';
       const same = (place.children || []).filter(c => c.type === 'panel').length;
-      if (place.type === 'building') return same ? 'Калитка ' + (same + 1) : 'Калитка во двор';
+      if (place.type === 'complex') return same ? 'Калитка ' + (same + 1) : 'Въезд на территорию';
+      if (place.type === 'house') return same ? place.name + ' — вход ' + (same + 1) : place.name + ' — входная группа';
       return same ? place.name + ' — панель ' + (same + 1) : place.name + ' — панель';
     }
 
-    // Панель ставится к ЖК или к подъезду: этаж и квартира местом установки не бывают
+    // Панель ставится на территорию ЖК, к дому или к подъезду: этаж и
+    // квартира местом установки не бывают
     function openAddPanelModal(presetId) {
       const places = [];
-      scopeRoots().forEach(b => {
-        places.push({ id: b.id, label: b.name + ' (весь ЖК)' });
-        (b.children || []).filter(c => c.type === 'entrance').forEach(e => {
-          places.push({ id: e.id, label: b.name + ' › ' + e.name });
+      collectScope('complex').forEach(k => {
+        places.push({ id: k.id, label: k.name + ' (вся территория)' });
+        (k.children || []).filter(c => c.type === 'house').forEach(h => {
+          places.push({ id: h.id, label: k.name + ' › ' + h.name + ' (весь дом)' });
+          (h.children || []).filter(c => c.type === 'entrance').forEach(e => {
+            places.push({ id: e.id, label: k.name + ' › ' + h.name + ' › ' + e.name });
+          });
         });
       });
       if (!places.length) { showToast('Сначала добавьте ЖК'); return; }
@@ -4739,7 +5092,7 @@
         '<div class="modal-field"><label>Название</label>' +
           '<input type="text" class="modal-name-input" id="pName" maxlength="80"' +
           ' value="' + escapeHtml(suggestPanelName(preset)) + '" placeholder="напр. Панель подъезда 1" /></div>' +
-        '<div class="modal-field"><label>Где стоит (ЖК или подъезд)</label>' +
+        '<div class="modal-field"><label>Где стоит (территория, дом или подъезд)</label>' +
           '<select class="modal-select" id="pPlace">' +
           places.map(p => '<option value="' + p.id + '"' + (p.id === preset ? ' selected' : '') + '>' + escapeHtml(p.label) + '</option>').join('') +
           '</select></div>' +
@@ -4779,7 +5132,7 @@
 
         const numErr = sipError(sip);
         if (numErr) { showModalError('pErr', numErr, sipInput); return; }
-        const limitErr = limitError(buildingOf(placeId), 'panel');
+        const limitErr = limitError(complexOf(placeId), 'panel');
         if (limitErr) { showModalError('pErr', limitErr); return; }
         clearModalError('pErr', [sipInput]);
 
@@ -4827,7 +5180,7 @@
         const sip = sipInput.value.trim();
         const priority = Number(document.getElementById('aPri').value) || 1;
 
-        const mailErr = emailError(value);
+        const mailErr = emailError(value, null, flat.id);
         if (mailErr) { showModalError('aErr', mailErr, email); return; }
         const numErr = sipError(sip);
         if (numErr) { showModalError('aErr', numErr, sipInput); return; }
@@ -4848,21 +5201,32 @@
     // и со стороны панели
     function openBindPanelsModal(flatId) {
       const flat = findNode(flatId);
-      const home = buildingOf(flatId);
+      const home = complexOf(flatId);
       // Кандидаты берутся из своего ЖК: связка между разными ЖК означала бы
-      // звонок с чужой панели жильцу другого арендатора
+      // звонок с чужой панели жильцу другого арендатора. Внутри ЖК домов
+      // может быть несколько — панели своего дома идут первыми.
       const panels = home ? collect(home, 'panel') : [];
       if (!panels.length) { showToast('В этом ЖК ещё нет панелей'); return; }
       const bound = new Set(bindingsOfFlat(flatId).map(b => b.panelId));
 
+      const myHouse = houseOf(flatId);
+      const myEnt = pathOf(flatId).filter(n => n.type === 'entrance')[0];
+      const rank = (p) => {
+        if (myEnt && (parentOf(p.id) || {}).id === myEnt.id) return 2;
+        if (myHouse && (houseOf(p.id) || {}).id === myHouse.id) return 1;
+        return 0;
+      };
+      panels.sort((a, b) => rank(b) - rank(a));
+
       openModal('Панели для «' + flat.name + '»',
         pickerSearchHtml('bindSearch', 'Поиск панелей...') +
         '<div class="modal-hint">Отметьте панели, звонок с которых должен приходить в эту квартиру. ' +
-          'Снятие галочки убирает связку. Показаны только панели ЖК «' + escapeHtml(home.name) + '».</div>' +
+          'Снятие галочки убирает связку. Показаны все панели ЖК «' + escapeHtml(home.name) + '»' +
+          (myHouse ? ', первыми — «' + escapeHtml(myHouse.name) + '»' : '') + '.</div>' +
         pickerToolbarHtml('bindPick') +
         '<div class="modal-list" id="bindPickList">' +
         panels.map(p => optionHtml(p.id, bound.has(p.id), 'doorbell', p.name,
-          locationText(p.id) + ' · ' + (p.meta.sipNumber || '—'), 'привязана')).join('') +
+          mountPath(p.id) + ' · ' + (p.meta.sipNumber || '—'), 'привязана')).join('') +
         '</div>',
         ghostBtn('Отмена') + primaryBtn('bindOk', 'Сохранить'),
         'modal-fixed'
@@ -4877,24 +5241,30 @@
 
     function openBindFlatsModal(panelId) {
       const panel = findNode(panelId);
-      const home = buildingOf(panelId);
+      const home = complexOf(panelId);
       const flats = home ? collect(home, 'flat') : [];
       if (!flats.length) { showToast('В этом ЖК ещё нет квартир'); return; }
       const bound = new Set(bindingsOfPanel(panelId).map(b => b.flatId));
 
-      // Панель у подъезда почти всегда вызывает квартиры своего подъезда:
-      // они идут первыми, но весь ЖК остаётся в списке
+      // Панель почти всегда вызывает квартиры своего подъезда, а панель дома —
+      // своего дома: они идут первыми, но весь ЖК остаётся в списке
       const mount = parentOf(panelId);
-      if (mount && mount.type === 'entrance') {
-        const near = new Set(collect(mount, 'flat').map(f => f.id));
-        flats.sort((a, b) => (near.has(b.id) ? 1 : 0) - (near.has(a.id) ? 1 : 0));
-      }
+      const myHouse = houseOf(panelId);
+      const near = mount && mount.type === 'entrance' ? new Set(collect(mount, 'flat').map(f => f.id)) : null;
+      const rank = (f) => {
+        if (near && near.has(f.id)) return 2;
+        if (myHouse && (houseOf(f.id) || {}).id === myHouse.id) return 1;
+        return 0;
+      };
+      if (near || myHouse) flats.sort((a, b) => rank(b) - rank(a));
+
+      const firstLabel = (near && mount) ? mount.name : (myHouse ? myHouse.name : '');
 
       openModal('Квартиры для «' + panel.name + '»',
-        pickerSearchHtml('bindSearch', 'Поиск квартир: номер, подъезд, этаж...') +
+        pickerSearchHtml('bindSearch', 'Поиск квартир: номер, дом, подъезд, этаж...') +
         '<div class="modal-hint">Отметьте квартиры, куда должен идти звонок с этой панели. ' +
-          'Снятие галочки убирает связку. Показаны только квартиры ЖК «' + escapeHtml(home.name) + '»' +
-          (mount && mount.type === 'entrance' ? ', первыми — «' + escapeHtml(mount.name) + '»' : '') + '.</div>' +
+          'Снятие галочки убирает связку. Показаны все квартиры ЖК «' + escapeHtml(home.name) + '»' +
+          (firstLabel ? ', первыми — «' + escapeHtml(firstLabel) + '»' : '') + '.</div>' +
         pickerToolbarHtml('bindPick') +
         '<div class="modal-list" id="bindPickList">' +
         flats.map(f => optionHtml(f.id, bound.has(f.id), 'home', f.name, locationText(f.id), 'привязана')).join('') +
@@ -5219,7 +5589,7 @@
       n.meta[key] = value;
       saveState();
       refreshTreeMeta();
-      if (n.type === 'building' && SUB_KEYS.indexOf(key) !== -1) rebuildTreeKeepingOpen();
+      if (n.type === 'complex' && SUB_KEYS.indexOf(key) !== -1) rebuildTreeKeepingOpen();
       renderCard();
     }
 
@@ -5260,7 +5630,7 @@
       if (child && child !== 'account') {
         items.push({ action: 'add-child', icon: 'add', text: 'Добавить ' + TYPES[child].acc });
       }
-      if (n.type === 'building' || n.type === 'entrance') {
+      if (MOUNT_TYPES.indexOf(n.type) !== -1) {
         items.push({ action: 'add-panel', icon: 'doorbell', text: 'Добавить панель', sub: 'сюда' });
       }
       if (n.type === 'flat') {
@@ -5577,7 +5947,8 @@
     function openResetModal() {
       openModal('Сбросить прототип?',
         '<div class="modal-hint" style="margin:0">Все правки структуры, панелей, аккаунтов и связок будут потеряны, ' +
-          'а данные вернутся к демо-набору: Юрловский проезд 7А и CityBay. Это действие нельзя отменить.</div>',
+          'а данные вернутся к демо-набору: Москва (ЖК «Отрадное» и «CityBay») и Московская область ' +
+          '(Химки и село Ивановское). Это действие нельзя отменить.</div>',
         ghostBtn('Отмена') + '<button class="modal-btn modal-btn-danger" id="resetOk">Сбросить</button>');
       document.getElementById('resetOk').addEventListener('click', function() {
         closeModal();
@@ -5604,10 +5975,10 @@
       if (lens === next && !force) return;
       lens = next;
       document.querySelectorAll('.tree-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === next));
-      addButton.title = next === 'equip' ? 'Добавить вызывную панель' : 'Добавить жилой комплекс';
+      addButton.title = next === 'equip' ? 'Добавить вызывную панель' : 'Добавить регион';
       searchInput.placeholder = next === 'equip'
         ? 'Поиск панелей: название, номер, модель, место…'
-        : 'Поиск: адрес, квартира, панель, номер, email…';
+        : 'Поиск: город, ЖК, дом, квартира, панель, номер, email…';
 
       if (next !== 'equip' && selectedView === 'fleet') selectedView = null;
       rebuildTree();
@@ -5626,17 +5997,21 @@
     let scopeSig = '';
 
     function syncScopeSelect() {
-      // Состояние подписки входит в подпись: приостановленный дом должен быть
-      // виден в самом переключателе, не открывая карточку
-      const sig = (state.scopeId || '') + '|' +
-        state.root.map(b => b.id + ':' + b.name + ':' + (subIssue(b) || '')).join(',');
+      // Переключатель перечисляет арендаторов, то есть ЖК, а не регионы:
+      // город в подписи нужен, чтобы одноимённые ЖК не путались.
+      // Состояние подписки тоже входит в подпись — приостановленный ЖК
+      // должен быть виден в самом переключателе, не открывая карточку.
+      const list = collectAll('complex');
+      const label = (k) => {
+        const city = pathOf(k.id).filter(n => n.type === 'city').map(n => n.name)[0];
+        const issue = subIssue(k);
+        return (city ? city + ' › ' : '') + k.name + (issue ? ' — ' + issue : '');
+      };
+      const sig = (state.scopeId || '') + '|' + list.map(k => k.id + ':' + label(k)).join(',');
       if (sig === scopeSig) return;
       scopeSig = sig;
-      scopeSelect.innerHTML = ['<option value="">Все ЖК (' + state.root.length + ')</option>']
-        .concat(state.root.map(b => {
-          const issue = subIssue(b);
-          return '<option value="' + b.id + '">' + escapeHtml(b.name + (issue ? ' — ' + issue : '')) + '</option>';
-        }))
+      scopeSelect.innerHTML = ['<option value="">Все ЖК (' + list.length + ')</option>']
+        .concat(list.map(k => '<option value="' + k.id + '">' + escapeHtml(label(k)) + '</option>'))
         .join('');
       scopeSelect.value = state.scopeId || '';
       enhanceSelect(scopeSelect);
@@ -5649,7 +6024,7 @@
       rebuildTree();
 
       const cur = selectedId ? findNode(selectedId) : null;
-      const inScope = cur && (!state.scopeId || (buildingOf(cur.id) || {}).id === state.scopeId);
+      const inScope = cur && (!state.scopeId || (complexOf(cur.id) || {}).id === state.scopeId);
       if (selectedView === 'fleet') showFleet();
       else if (inScope) select(selectedId);
       else {
@@ -5685,7 +6060,7 @@
 
     addButton.addEventListener('click', function() {
       if (lens === 'equip') openAddPanelModal(null);
-      else openCreateNodeModal('building', null);
+      else openCreateNodeModal('region', null);
     });
 
     masterCheckbox.addEventListener('click', function() {
@@ -5777,7 +6152,7 @@
       if (!n) return;
       // Имя аккаунта — это его email, ключ учётки в SIPManager
       if (n.type === 'account') {
-        const err = emailError(this.value, n.id);
+        const err = emailError(this.value, n.id, (parentOf(n.id) || {}).id);
         if (err) {
           this.value = n.name;
           this.classList.add('invalid');
@@ -5797,7 +6172,8 @@
         if (text) text.textContent = name;
         li.dataset.search = searchText(n);
       });
-      if (n.type === 'building') { syncScopeSelect(); updateStatus(); }
+      // Название ЖК и города стоят в подписи переключателя области видимости
+      if (n.type === 'complex' || n.type === 'city') { syncScopeSelect(); updateStatus(); }
       refreshTreeMeta();
       if (TYPES[n.type].container) cardDesc.value = nodeDescription(n);
       renderBreadcrumb(n);
@@ -5953,7 +6329,7 @@
 
     cfgSip.value = state.cfg.sipServer;
     cfgRealm.value = state.cfg.realm;
-    addButton.title = 'Добавить жилой комплекс';
+    addButton.title = 'Добавить регион';
 
     const startRoots = scopeRoots();
     selectedId = startRoots.length ? startRoots[0].id : null;
