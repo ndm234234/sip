@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>128 плиток · максимальная нагрузка</title>
+    <style>
+        /* Сброс и базовый фон */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0b0d15;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            padding: 16px;
+        }
+
+        /* Сетка 16x8 = 128 плиток */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(16, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            gap: 8px;
+            width: 100%;
+            max-width: 1400px;
+            aspect-ratio: 16 / 8;
+            background: #141824;
+            padding: 12px;
+            border-radius: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+        }
+
+        /* Каждая плитка — живой, тяжёлый контейнер */
+        .tile {
+            background: #1f2538;
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            transition: transform 0.05s linear, box-shadow 0.1s ease;
+            will-change: transform, filter, background;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0; /* убираем текст, если он есть */
+            color: rgba(255, 255, 255, 0.0);
+            /* Анимация — каждая плитка будет двигаться через JS + CSS-переменные */
+        }
+
+        /* Псевдоэлемент для дополнительной анимации (градиент + свечение) */
+        .tile::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            padding: 2px;
+            background: conic-gradient(from var(--angle, 0deg), 
+                #ff6b6b, #feca57, #48dbfb, #1dd1a1, #5f27cd, #ff6b6b);
+            background-size: 300% 300%;
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            opacity: 0.7;
+            animation: spinGradient 4s linear infinite;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        /* Второй слой — шумное свечение */
+        .tile::after {
+            content: '';
+            position: absolute;
+            inset: 4px;
+            border-radius: 16px;
+            background: radial-gradient(circle at var(--mx, 50%) var(--my, 50%), 
+                rgba(255, 255, 255, 0.15) 0%, 
+                rgba(255, 255, 255, 0.0) 70%);
+            opacity: 0.8;
+            mix-blend-mode: overlay;
+            transition: background 0.1s;
+            pointer-events: none;
+        }
+
+        /* Внутренний контент плитки — ещё один слой для анимации цвета */
+        .tile .inner {
+            position: absolute;
+            inset: 6px;
+            border-radius: 14px;
+            background: var(--tile-bg, #2a3150);
+            transition: background 0.2s;
+            box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.15);
+            text-shadow: 0 0 8px currentColor;
+            letter-spacing: 0.05em;
+            backdrop-filter: blur(2px);
+            animation: pulseBg 3s ease-in-out infinite alternate;
+        }
+
+        /* Разноцветные тени и свечение */
+        .tile .glow {
+            position: absolute;
+            inset: -20%;
+            background: radial-gradient(circle at 30% 40%, 
+                var(--glow-color, rgba(255, 200, 100, 0.3)) 0%, 
+                transparent 70%);
+            filter: blur(30px);
+            opacity: 0.7;
+            mix-blend-mode: screen;
+            animation: floatGlow 6s ease-in-out infinite alternate;
+            pointer-events: none;
+        }
+
+        /* Анимация вращения градиента */
+        @keyframes spinGradient {
+            0% { --angle: 0deg; }
+            100% { --angle: 360deg; }
+        }
+
+        /* Пульсация фона внутри плитки */
+        @keyframes pulseBg {
+            0% { opacity: 0.6; transform: scale(1); }
+            100% { opacity: 1; transform: scale(1.02); }
+        }
+
+        /* Летающее свечение */
+        @keyframes floatGlow {
+            0% { transform: translate(0, 0) scale(1); opacity: 0.4; }
+            100% { transform: translate(20px, -20px) scale(1.6); opacity: 0.9; }
+        }
+
+        /* Дополнительная рябь (турбулентность) — применяется через JS */
+        .tile.ripple {
+            animation: rippleShift 0.15s infinite alternate ease-in-out;
+        }
+
+        @keyframes rippleShift {
+            0% { transform: translate(0, 0) rotate(0deg) scale(1); }
+            100% { transform: translate(1px, -1px) rotate(0.6deg) scale(1.01); }
+        }
+
+        /* Медиа для мелких экранов — уменьшаем количество колонок, но сохраняем 128 плиток */
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: repeat(8, 1fr);
+                grid-template-rows: repeat(16, 1fr);
+                aspect-ratio: 8 / 16;
+                gap: 6px;
+                padding: 8px;
+            }
+        }
+
+        @media (max-width: 500px) {
+            .grid {
+                grid-template-columns: repeat(4, 1fr);
+                grid-template-rows: repeat(32, 1fr);
+                aspect-ratio: 4 / 32;
+                gap: 4px;
+                padding: 6px;
+            }
+            .tile .inner {
+                font-size: 0.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="grid" id="gridContainer"></div>
+
+    <script>
+        (function() {
+            const grid = document.getElementById('gridContainer');
+            const TOTAL_TILES = 128;
+
+            // Набор ярких цветов для внутреннего фона (чтобы каждая плитка была уникальна)
+            const colorPalette = [
+                '#2a3150', '#3a2c4a', '#4a2c3a', '#2c4a4a', '#4a3a2c', '#3a4a2c',
+                '#2c3a5a', '#5a2c4a', '#4a2c5a', '#2c5a4a', '#5a4a2c', '#4a5a2c',
+                '#2c3a4a', '#3a2c5a', '#5a2c3a', '#2c5a3a', '#3a5a2c', '#5a3a2c',
+                '#1f2a40', '#2a1f40', '#402a1f', '#1f402a', '#2a401f', '#401f2a',
+                '#1f2a3a', '#2a1f3a', '#3a1f2a', '#1f3a2a', '#2a3a1f', '#3a2a1f',
+                '#16202e', '#20162e', '#2e1620', '#162e20', '#202e16', '#2e2016',
+                '#0f1a28', '#1a0f28', '#281a0f', '#0f281a', '#1a280f', '#281f0a'
+            ];
+
+            // Функция для генерации случайного числа в диапазоне
+            const rand = (min, max) => Math.random() * (max - min) + min;
+
+            // Создаём 128 плиток с уникальными анимациями и стилями
+            for (let i = 0; i < TOTAL_TILES; i++) {
+                const tile = document.createElement('div');
+                tile.className = 'tile';
+
+                // Случайный цвет фона (внутренний слой)
+                const bgColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+                // Случайный цвет для свечения
+                const glowHue = Math.floor(Math.random() * 360);
+                const glowColor = `hsl(${glowHue}, 80%, 60%)`;
+
+                // Внутренний блок
+                const inner = document.createElement('div');
+                inner.className = 'inner';
+                // Добавляем номер плитки мелким текстом (для красоты, но почти невидимо)
+                inner.textContent = `${i+1}`;
+                inner.style.setProperty('--tile-bg', bgColor);
+                inner.style.background = `radial-gradient(circle at 30% 30%, ${bgColor}, #0e121f)`;
+                inner.style.color = `hsla(${glowHue}, 70%, 80%, 0.25)`;
+
+                // Слой свечения
+                const glow = document.createElement('div');
+                glow.className = 'glow';
+                glow.style.setProperty('--glow-color', glowColor);
+                // Разная скорость для каждого
+                const duration = rand(4, 12);
+                glow.style.animationDuration = `${duration}s`;
+
+                // Собираем
+                tile.appendChild(glow);
+                tile.appendChild(inner);
+
+                // Добавляем уникальные CSS-переменные для анимации псевдоэлементов
+                tile.style.setProperty('--angle', `${Math.random() * 360}deg`);
+                tile.style.setProperty('--mx', `${rand(20, 80)}%`);
+                tile.style.setProperty('--my', `${rand(20, 80)}%`);
+
+                // Каждая плитка получает разные задержки для анимации пульсации (чтобы не синхронно)
+                const pulseDelay = rand(0, 5);
+                inner.style.animationDelay = `${pulseDelay}s`;
+
+                // Добавляем класс ripple для микродрожания (не всем, чтобы было разнообразие)
+                if (i % 3 === 0) {
+                    tile.classList.add('ripple');
+                    // разная длительность ripple
+                    tile.style.animationDuration = `${rand(0.08, 0.25)}s`;
+                }
+
+                // Добавляем вращение через transform с разной скоростью (через JS)
+                // Будем обновлять transform в requestAnimationFrame для максимальной нагрузки
+                // Сохраняем состояние для каждого тайла
+                tile.dataset.rotation = rand(0, 360);
+                tile.dataset.rotSpeed = rand(0.5, 3.5) * (Math.random() > 0.5 ? 1 : -1);
+                tile.dataset.scaleX = 1;
+                tile.dataset.scaleY = 1;
+                tile.dataset.skewX = 0;
+                tile.dataset.skewY = 0;
+
+                // Дополнительная анимация — изменение цвета свечения (через JS)
+                tile.dataset.hueShift = rand(20, 80);
+
+                // Добавляем обработчик для изменения стилей (для нагрузки)
+                tile.addEventListener('mouseenter', function(e) {
+                    // При наведении — дополнительная нагрузка (смена стилей)
+                    this.style.filter = 'brightness(1.3) contrast(1.2)';
+                    this.style.transform = 'scale(1.08) rotate(2deg)';
+                });
+                tile.addEventListener('mouseleave', function(e) {
+                    this.style.filter = 'brightness(1) contrast(1)';
+                    this.style.transform = 'scale(1) rotate(0deg)';
+                });
+
+                grid.appendChild(tile);
+            }
+
+            // ---- АНИМАЦИОННЫЙ ЦИКЛ для максимальной нагрузки ----
+            // Обновляем трансформации, цвета, тени, позиции свечения
+            let frame = 0;
+            const tiles = document.querySelectorAll('.tile');
+
+            function animateTiles() {
+                frame++;
+                // Каждый кадр обновляем параметры плиток
+                tiles.forEach((tile, index) => {
+                    // Поворот
+                    let rot = parseFloat(tile.dataset.rotation) || 0;
+                    const speed = parseFloat(tile.dataset.rotSpeed) || 1;
+                    rot += speed * 0.2;
+                    if (rot > 360) rot -= 360;
+                    if (rot < 0) rot += 360;
+                    tile.dataset.rotation = rot;
+
+                    // Масштабирование с использованием синуса (волны)
+                    const scaleFactor = 1 + 0.04 * Math.sin(frame * 0.02 + index);
+                    const scaleX = scaleFactor;
+                    const scaleY = 1 + 0.03 * Math.cos(frame * 0.025 + index * 0.7);
+
+                    // Наклон (skew) — небольшие искажения
+                    const skewX = 0.4 * Math.sin(frame * 0.015 + index * 1.2);
+                    const skewY = 0.3 * Math.cos(frame * 0.018 + index * 0.9);
+
+                    // Применяем трансформацию
+                    tile.style.transform = `rotate(${rot}deg) scale(${scaleX}, ${scaleY}) skew(${skewX}deg, ${skewY}deg)`;
+
+                    // Меняем позицию свечения (псевдоэлемент ::after)
+                    const mx = 50 + 30 * Math.sin(frame * 0.01 + index * 0.5);
+                    const my = 50 + 30 * Math.cos(frame * 0.012 + index * 0.6);
+                    tile.style.setProperty('--mx', `${mx}%`);
+                    tile.style.setProperty('--my', `${my}%`);
+
+                    // Меняем угол градиента у ::before (через переменную)
+                    const angle = (parseFloat(tile.dataset.angle) || 0) + 0.5;
+                    tile.dataset.angle = angle % 360;
+                    tile.style.setProperty('--angle', `${angle}deg`);
+
+                    // Меняем цвет внутреннего свечения (дополнительная нагрузка)
+                    const hue = (frame * 0.05 + index * 3) % 360;
+                    const glowElem = tile.querySelector('.glow');
+                    if (glowElem) {
+                        glowElem.style.background = `radial-gradient(circle at 30% 40%, 
+                            hsl(${hue}, 80%, 60%, 0.4), 
+                            transparent 70%)`;
+                    }
+
+                    // Меняем opacity внутреннего слоя для мерцания
+                    const inner = tile.querySelector('.inner');
+                    if (inner) {
+                        const pulse = 0.7 + 0.3 * Math.sin(frame * 0.03 + index * 0.9);
+                        inner.style.opacity = pulse;
+                        // Иногда меняем цвет текста (мелкий)
+                        inner.style.color = `hsla(${hue}, 70%, 70%, ${0.15 + 0.1 * Math.sin(frame * 0.02 + index)})`;
+                    }
+
+                    // Меняем box-shadow для дополнительной нагрузки
+                    const shadowIntensity = 0.3 + 0.2 * Math.sin(frame * 0.02 + index * 0.4);
+                    tile.style.boxShadow = `0 0 ${15 + 10 * shadowIntensity}px hsla(${hue}, 70%, 50%, ${shadowIntensity * 0.3})`;
+                });
+
+                // Продолжаем бесконечный цикл
+                requestAnimationFrame(animateTiles);
+            }
+
+            // Запускаем тяжёлую анимацию
+            animateTiles();
+
+            // Дополнительная нагрузка: каждые 100мс меняем классы у рандомных плиток
+            setInterval(() => {
+                const randomTile = tiles[Math.floor(Math.random() * tiles.length)];
+                if (randomTile) {
+                    // Переключаем класс ripple для дополнительной анимации
+                    randomTile.classList.toggle('ripple');
+                    // Меняем фильтр
+                    randomTile.style.filter = `hue-rotate(${Math.random() * 30}deg) brightness(${0.8 + Math.random() * 0.6})`;
+                    // Меняем background у inner
+                    const inner = randomTile.querySelector('.inner');
+                    if (inner) {
+                        const r = Math.floor(Math.random() * 200 + 30);
+                        const g = Math.floor(Math.random() * 200 + 30);
+                        const b = Math.floor(Math.random() * 200 + 30);
+                        inner.style.background = `radial-gradient(circle at 30% 30%, rgb(${r},${g},${b}), #0e121f)`;
+                    }
+                }
+            }, 80);
+
+            // И ещё одна интервал для изменения размеров (дрожание)
+            setInterval(() => {
+                tiles.forEach((tile, i) => {
+                    if (i % 3 === 0) {
+                        const scale = 1 + 0.02 * Math.sin(Date.now() / 1000 + i);
+                        tile.style.transform += ` scale(${scale})`;
+                    }
+                });
+            }, 50);
+
+            console.log('🔥 128 плиток анимированы на максимум!');
+        })();
+    </script>
+</body>
+</html>
