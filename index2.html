@@ -33,11 +33,57 @@
     }
     .cam-label.active { color: #fff; border-color: #f0883e; background: rgba(240,136,62,.22); }
 
+    /* Hint chip shown while the floor apron is hovered (clicks go to the canvas). */
+    .floor-badge {
+      pointer-events: none;
+      display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+      font: 600 11px system-ui; color: #fff;
+      background: rgba(240,136,62,.32); border: 1px solid rgba(240,136,62,.75);
+      padding: 5px 10px; border-radius: 999px; backdrop-filter: blur(4px);
+      box-shadow: 0 6px 18px rgba(0,0,0,.45);
+    }
+    .floor-badge svg, #exit2d svg {
+      width: 13px; height: 13px; fill: none; stroke: currentColor;
+      stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+    }
+
+    #feedNote {
+      position: absolute; left: 12px; bottom: 44px; z-index: 5; display: none;
+      color: #f0b46e; font: 500 12px system-ui;
+      background: rgba(40,24,8,.6); border: 1px solid #5a3d17;
+      padding: 6px 10px; border-radius: 8px; pointer-events: none; backdrop-filter: blur(6px);
+    }
+    #feedNote.on { display: block; }
+
     #hint {
       position: absolute; left: 12px; bottom: 12px; z-index: 5;
       color: #9fb0c3; font: 500 12px system-ui;
       background: rgba(8,11,18,.55); border: 1px solid #1e2733;
       padding: 6px 10px; border-radius: 8px; pointer-events: none; backdrop-filter: blur(6px);
+    }
+
+    /* Full-screen top-down plan of a single floor. */
+    #scene.plan2d { position: fixed; inset: 0; z-index: 1500; }
+    body.mode2d #side { position: fixed; top: 0; right: 0; height: 100%; z-index: 1600; }
+
+    #plan2dBar {
+      position: absolute; top: 12px; left: 12px; z-index: 6;
+      display: none; align-items: center; gap: 10px;
+    }
+    body.mode2d #plan2dBar { display: flex; }
+    #exit2d {
+      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+      font: 600 12px system-ui; color: #e6edf3; padding: 7px 12px;
+      background: rgba(8,11,18,.7); border: 1px solid #2a3340; border-radius: 999px;
+      backdrop-filter: blur(6px);
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    #exit2d:hover { color: #fff; border-color: #f0883e; background: rgba(240,136,62,.22); }
+    #planTitle {
+      font: 600 12px system-ui; color: #9fb0c3; letter-spacing: .02em;
+      padding: 7px 12px; background: rgba(8,11,18,.55);
+      border: 1px solid #1e2733; border-radius: 999px;
+      pointer-events: none; backdrop-filter: blur(6px);
     }
 
     /* Floor switcher */
@@ -160,6 +206,14 @@
   <div id="app">
     <div id="scene">
       <div id="hint">ЛКМ — вращать · колесо — зум · клик по камере — видео · ▲/▼ — этаж</div>
+      <div id="feedNote"></div>
+      <div id="plan2dBar">
+        <button id="exit2d" title="Вернуться в 3D">
+          <svg viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>
+          3D
+        </button>
+        <span id="planTitle"></span>
+      </div>
       <div id="floors">
         <button class="fbtn" id="floorUp" title="Этаж выше">▲</button>
         <div id="floorList"></div>
@@ -319,6 +373,11 @@
     const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2500);
     camera.position.set(30, 26, 34);
 
+    // Top-down camera used by the full-screen 2D floor plan.
+    const planCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1200);
+    planCam.up.set(0, 0, -1);
+    let activeCam = camera; // camera currently used for rendering and picking
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
@@ -341,6 +400,15 @@
     controls.maxPolarAngle = Math.PI * 0.49; // don't go under the floor
     controls.autoRotate = true;
     controls.autoRotateSpeed = 0.5;
+
+    // Pan/zoom only, for the 2D plan view.
+    const planControls = new OrbitControls(planCam, renderer.domElement);
+    planControls.enableRotate = false;
+    planControls.enableDamping = true;
+    planControls.dampingFactor = 0.12;
+    planControls.minZoom = 0.6;
+    planControls.maxZoom = 8;
+    planControls.enabled = false;
 
     // ---- Lighting ----
     scene.add(new THREE.HemisphereLight(0xc6d6ff, 0x33405a, 1.0));
@@ -386,36 +454,47 @@
     const floors = [];
     let activeFloor = 0;
     let overview = false; // "whole building" mode: all floors stacked & visible
+    let mode2d = false;   // full-screen top-down plan of the active floor
 
     // Procedural blueprint-style plan, unique per floor (rooms via BSP split).
-    function makePlanTexture() {
-      const W = 512, H = 372;
+    // Its own seeded PRNG keeps a floor's layout reproducible, so the same plan
+    // can be re-drawn at a larger scale for the full-screen 2D view.
+    const maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    function makePlanTexture(seed, scale) {
+      const S = scale || 1;
+      let s = ((seed + 1) * 2654435761) >>> 0;
+      function nx() { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }
+      function nxr(min, max) { return min + (max - min) * nx(); }
+      nx(); nx(); nx(); // shake off correlated low seeds
+
+      const W = Math.round(512 * S), H = Math.round(W * FOOT_Z / FOOT_X);
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const ctx = cv.getContext('2d');
       ctx.clearRect(0, 0, W, H);
 
-      // Footprint maps the building's -18..18 / -12..12 onto the 44x32 plane.
-      const fx = (4 / 44) * W, fw = (36 / 44) * W;
-      const fy = (4 / 32) * H, fh = (24 / 32) * H;
+      // The canvas now covers exactly the walled footprint.
+      const inset = 3 * S;
+      const fx = inset, fw = W - inset * 2;
+      const fy = inset, fh = H - inset * 2;
 
       // Faint background grid across the whole slab.
-      ctx.strokeStyle = 'rgba(120,160,210,0.07)'; ctx.lineWidth = 1;
-      for (let x = 0; x <= W; x += 26) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-      for (let y = 0; y <= H; y += 26) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+      ctx.strokeStyle = 'rgba(120,160,210,0.07)'; ctx.lineWidth = S;
+      for (let x = 0; x <= W; x += 26 * S) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+      for (let y = 0; y <= H; y += 26 * S) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
       // Split the footprint into rooms.
+      const MIN = 64 * S;
       const rooms = [];
       (function split(r, depth) {
-        const MIN = 64;
-        if (depth <= 0 || (r.w < MIN * 2 && r.h < MIN * 2) || rnd() < 0.12) { rooms.push(r); return; }
+        if (depth <= 0 || (r.w < MIN * 2 && r.h < MIN * 2) || nx() < 0.12) { rooms.push(r); return; }
         if (r.w >= r.h) {
           if (r.w < MIN * 2) { rooms.push(r); return; }
-          const cut = rng(MIN, r.w - MIN);
+          const cut = nxr(MIN, r.w - MIN);
           split({ x: r.x, y: r.y, w: cut, h: r.h }, depth - 1);
           split({ x: r.x + cut, y: r.y, w: r.w - cut, h: r.h }, depth - 1);
         } else {
           if (r.h < MIN * 2) { rooms.push(r); return; }
-          const cut = rng(MIN, r.h - MIN);
+          const cut = nxr(MIN, r.h - MIN);
           split({ x: r.x, y: r.y, w: r.w, h: cut }, depth - 1);
           split({ x: r.x, y: r.y + cut, w: r.w, h: r.h - cut }, depth - 1);
         }
@@ -423,48 +502,89 @@
 
       // Rooms: light tint + walls, some hatched (e.g. service areas).
       rooms.forEach(function (r) {
-        ctx.fillStyle = rnd() < 0.5 ? 'rgba(90,140,200,0.05)' : 'rgba(90,140,200,0.10)';
+        ctx.fillStyle = nx() < 0.5 ? 'rgba(90,140,200,0.05)' : 'rgba(90,140,200,0.10)';
         ctx.fillRect(r.x, r.y, r.w, r.h);
-        if (rnd() < 0.25) {
+        if (nx() < 0.25) {
           ctx.save();
           ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
-          ctx.strokeStyle = 'rgba(120,170,225,0.16)'; ctx.lineWidth = 1;
-          for (let d = -r.h; d < r.w; d += 12) { ctx.beginPath(); ctx.moveTo(r.x + d, r.y); ctx.lineTo(r.x + d + r.h, r.y + r.h); ctx.stroke(); }
+          ctx.strokeStyle = 'rgba(120,170,225,0.16)'; ctx.lineWidth = S;
+          for (let d = -r.h; d < r.w; d += 12 * S) { ctx.beginPath(); ctx.moveTo(r.x + d, r.y); ctx.lineTo(r.x + d + r.h, r.y + r.h); ctx.stroke(); }
           ctx.restore();
         }
-        ctx.strokeStyle = 'rgba(120,170,225,0.55)'; ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(120,170,225,0.55)'; ctx.lineWidth = 2 * S;
         ctx.strokeRect(r.x, r.y, r.w, r.h);
       });
 
       // Outer building boundary, drawn bold on top.
-      ctx.strokeStyle = 'rgba(150,200,255,0.85)'; ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(150,200,255,0.85)'; ctx.lineWidth = 4 * S;
       ctx.strokeRect(fx, fy, fw, fh);
 
       const tex = new THREE.CanvasTexture(cv);
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = 4;
+      tex.anisotropy = maxAniso;
       return tex;
     }
+
+    // Floor plates are the scene's handles: the inner slab selects its floor,
+    // the apron around it opens the 2D plan.
+    const floorPlates = [];
+    const SLAB_COLOR = 0x232c3a, SLAB_HOVER = 0x33455f;
+    const FOOT_X = 18, FOOT_Z = 12;         // outer wall footprint
+    const SLAB_X = 22, SLAB_Z = 16;         // plate incl. the apron around it
+
+    // Ring of floor reaching from the outer walls to the edge of the plate.
+    const APRON_GEO = (function () {
+      const outline = new THREE.Shape();
+      outline.moveTo(-SLAB_X, -SLAB_Z);
+      outline.lineTo(SLAB_X, -SLAB_Z);
+      outline.lineTo(SLAB_X, SLAB_Z);
+      outline.lineTo(-SLAB_X, SLAB_Z);
+      outline.lineTo(-SLAB_X, -SLAB_Z);
+      const hole = new THREE.Path();
+      hole.moveTo(-FOOT_X, -FOOT_Z);
+      hole.lineTo(-FOOT_X, FOOT_Z);
+      hole.lineTo(FOOT_X, FOOT_Z);
+      hole.lineTo(FOOT_X, -FOOT_Z);
+      hole.lineTo(-FOOT_X, -FOOT_Z);
+      outline.holes.push(hole);
+      return new THREE.ShapeGeometry(outline);
+    })();
 
     function buildFloor(level) {
       const g = new THREE.Group();
       g.position.y = level * FLOOR_SPACING;
 
-      const slabMat = new THREE.MeshStandardMaterial({ color: 0x232c3a, metalness: 0.2, roughness: 0.9 });
-      const slab = new THREE.Mesh(new THREE.PlaneGeometry(44, 32), slabMat);
+      const slabMat = new THREE.MeshStandardMaterial({ color: SLAB_COLOR, metalness: 0.2, roughness: 0.9 });
+      const slab = new THREE.Mesh(new THREE.PlaneGeometry(FOOT_X * 2, FOOT_Z * 2), slabMat);
       slab.rotation.x = -Math.PI / 2; slab.receiveShadow = true; g.add(slab);
 
+      // The apron reaching past the walls is what opens the 2D plan, so only the
+      // floor in focus lays one out.
+      const apronMat = new THREE.MeshStandardMaterial({ color: SLAB_COLOR, metalness: 0.2, roughness: 0.9 });
+      const apron = new THREE.Mesh(APRON_GEO, apronMat);
+      apron.rotation.x = -Math.PI / 2; apron.receiveShadow = true; g.add(apron);
+
       // Floor-plan overlay sitting just above the slab.
-      const planMat = new THREE.MeshBasicMaterial({ map: makePlanTexture(), transparent: true, opacity: 0.9, depthWrite: false });
-      const plan = new THREE.Mesh(new THREE.PlaneGeometry(44, 32), planMat);
+      const baseTex = makePlanTexture(level, 1);
+      const planMat = new THREE.MeshBasicMaterial({ map: baseTex, transparent: true, opacity: 0.9, depthWrite: false });
+      const plan = new THREE.Mesh(new THREE.PlaneGeometry(FOOT_X * 2, FOOT_Z * 2), planMat);
       plan.rotation.x = -Math.PI / 2; plan.position.y = 0.04; g.add(plan);
+
+      slab.userData.floorLevel = level; slab.userData.plate = 'slab';
+      apron.userData.floorLevel = level; apron.userData.plate = 'apron';
+      floorPlates.push(slab, apron);
 
       const wallMat = new THREE.MeshStandardMaterial({ color: 0x4a566c, metalness: 0.2, roughness: 0.8, transparent: true, opacity: 0.4, side: THREE.DoubleSide });
       const edgeMat = new THREE.LineBasicMaterial({ color: 0x3f5a8a, transparent: true, opacity: 1 });
       WALLS.forEach(function (s) { addWall(g, wallMat, edgeMat, s[0], s[1], s[2], s[3]); });
 
       scene.add(g);
-      floors.push({ level: level, group: g, baseY: level * FLOOR_SPACING, targetY: level * FLOOR_SPACING, slabMat: slabMat, wallMat: wallMat, edgeMat: edgeMat, planMat: planMat });
+      floors.push({
+        level: level, group: g, baseY: level * FLOOR_SPACING, targetY: level * FLOOR_SPACING,
+        slabMat: slabMat, wallMat: wallMat, edgeMat: edgeMat, planMat: planMat,
+        apron: apron, apronMat: apronMat,
+        baseTex: baseTex, hiTex: null,
+      });
     }
     for (let f = 0; f < FLOORS; f++) buildFloor(f);
 
@@ -474,11 +594,289 @@
     const FLOOR_GAP = FLOOR_SPACING * 3; // extra gap -> adjacent floors at 4x spacing
     function applyFloorSpread() {
       floors.forEach(function (fl) {
-        if (overview) { fl.targetY = fl.baseY; return; } // collapse to a solid stack
+        if (overview || mode2d) { fl.targetY = fl.baseY; return; } // collapse to a solid stack
         const d = fl.level - activeFloor;
         fl.targetY = fl.baseY + Math.sign(d) * FLOOR_GAP;
       });
     }
+
+    // ---- What the cameras pick up ----------------------------------------
+    // Rather than abstract coverage volumes, each camera shows the thing it
+    // actually catches: a person walking across its line of sight, standing
+    // upright on the floor. The sprites are cut-outs on a transparent canvas,
+    // so nothing but the person is drawn.
+    const PERSON_H = 1.78;                 // metres, floor to top of head
+    const SPRITE_W = 168, SPRITE_H = 300;  // sprite canvas, px
+    const KEY_TOL = 0.26;                  // how close to the backdrop counts as background
+    const FEED_W = 4.4, FEED_H = 2.6;      // metres the clip may occupy, under WALL_H
+
+    // The clip is served with CORS headers so WebGL can sample it even when this
+    // page is opened straight from disk; a file:// copy cannot be textured.
+    const PERSON_VIDEO = 'https://ndm234234.github.io/sip/1.webm';
+    const PERSON_VIDEO_LOCAL = 'walk.mp4';
+
+    function makePersonSprite(phaseOffset) {
+      const cv = document.createElement('canvas');
+      cv.width = SPRITE_W; cv.height = SPRITE_H;
+      const ctx = cv.getContext('2d');
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = maxAniso;
+
+      const H = SPRITE_H - 16;          // body height in px
+      const base = SPRITE_H - 8;        // floor line
+      const cx = SPRITE_W / 2;
+      const headR = H * 0.062;
+
+      // The whole figure is drawn twice: once fattened and dark as an outline,
+      // once in light grey, so it stays readable over any floor colour.
+      function figure(phase, extra, color) {
+        const bob = Math.abs(Math.cos(phase)) * H * 0.012;
+        const hipY = base - H * 0.50 - bob;
+        const shY = base - H * 0.81 - bob;
+        const headY = base - H * 0.935 - bob;
+
+        ctx.strokeStyle = color; ctx.fillStyle = color;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+        ctx.lineWidth = H * 0.075 + extra;
+        [Math.sin(phase), Math.sin(phase + Math.PI)].forEach(function (s) {
+          ctx.beginPath();
+          ctx.moveTo(cx, hipY);
+          ctx.lineTo(cx + s * H * 0.085, hipY + H * 0.25 - Math.max(0, s) * H * 0.02);
+          ctx.lineTo(cx + s * H * 0.17, base - Math.max(0, s) * H * 0.05);
+          ctx.stroke();
+        });
+
+        ctx.lineWidth = H * 0.05 + extra;
+        [Math.sin(phase + Math.PI), Math.sin(phase)].forEach(function (s) {
+          ctx.beginPath();
+          ctx.moveTo(cx, shY);
+          ctx.lineTo(cx + s * H * 0.07, shY + H * 0.17);
+          ctx.lineTo(cx + s * H * 0.14, shY + H * 0.31);
+          ctx.stroke();
+        });
+
+        ctx.lineWidth = H * 0.15 + extra;
+        ctx.beginPath();
+        ctx.moveTo(cx, hipY + H * 0.02);
+        ctx.lineTo(cx + H * 0.012, shY);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(cx + H * 0.016, headY, headR + extra * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      let acc = 1;
+      return {
+        texture: tex,
+        step: function (t, dt) {
+          acc += dt;
+          if (acc < 1 / 24) return; // camera-ish frame rate
+          acc = 0;
+          const phase = t * 3.4 + phaseOffset;
+          ctx.clearRect(0, 0, SPRITE_W, SPRITE_H);
+          figure(phase, 7, 'rgba(9,13,19,0.55)');
+          figure(phase, 0, '#e9f0f8');
+          tex.needsUpdate = true;
+        },
+      };
+    }
+
+    // A few phase-shifted copies so people in neighbouring rooms don't march in
+    // lockstep; markers pick one in turn.
+    const sprites = [makePersonSprite(0), makePersonSprite(2.1), makePersonSprite(4.2)];
+
+    // Faint pool of light under each person: on a floor this dark a cast
+    // shadow would be invisible, so the contact point is lit instead.
+    function makeBlobTexture() {
+      const S = 128;
+      const cv = document.createElement('canvas'); cv.width = S; cv.height = S;
+      const ctx = cv.getContext('2d');
+      const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+      g.addColorStop(0, 'rgba(150,190,255,0.34)');
+      g.addColorStop(0.45, 'rgba(120,165,235,0.13)');
+      g.addColorStop(1, 'rgba(110,155,225,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, S, S);
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
+    const blobTex = makeBlobTexture();
+
+    // One shared quad; each person is placed by scaling and offsetting it so the
+    // figure inside the frame ends up PERSON_H tall with its feet on the floor.
+    const PERSON_GEO = new THREE.PlaneGeometry(1, 1);
+    const fit = { w: 1.06, h: 1.89, cx: 0, cy: 0.89 };   // measured for the drawn sprite
+    const fitTarget = Object.assign({}, fit);
+
+    const PERSON_VERT = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+    // Sprites carry their own alpha. Video frames are opaque: a clip shot
+    // against a flat backdrop gets that backdrop keyed out, leaving the person
+    // alone, while ordinary footage simply plays as a soft-edged panel. The
+    // backdrop colour is read from the frame's own corners, which keeps the
+    // comparison in whatever colour space the sampler hands back.
+    const PERSON_FRAG = `
+      uniform sampler2D uMap;
+      uniform float uTol;
+      uniform float uKeyOn;
+      uniform float uFeather;
+      varying vec2 vUv;
+      vec3 enc(vec3 c) { return sqrt(max(c, 0.0)); }
+      void main() {
+        vec4 c = texture2D(uMap, vUv);
+        float a = c.a;
+        if (uKeyOn > 0.5) {
+          vec3 bg = ( texture2D(uMap, vec2(0.015, 0.015)).rgb
+                    + texture2D(uMap, vec2(0.985, 0.015)).rgb
+                    + texture2D(uMap, vec2(0.015, 0.985)).rgb
+                    + texture2D(uMap, vec2(0.985, 0.985)).rgb ) * 0.25;
+          a *= smoothstep(uTol, uTol + 0.13, distance(enc(c.rgb), enc(bg)));
+        }
+        vec2 e = min(vUv, 1.0 - vUv);
+        a *= smoothstep(0.0, uFeather, min(e.x, e.y)); // never show a hard frame edge
+        if (a < 0.02) discard;
+        // Unlit, but tone mapped with everything else so the clip reads as part
+        // of the scene rather than a lit-up panel.
+        gl_FragColor = vec4(c.rgb, a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `;
+
+    const personMats = sprites.map(function (s) {
+      return new THREE.ShaderMaterial({
+        uniforms: {
+          uMap: { value: s.texture },
+          uTol: { value: KEY_TOL },
+          uKeyOn: { value: 0 },
+          uFeather: { value: 0.012 },
+        },
+        vertexShader: PERSON_VERT,
+        fragmentShader: PERSON_FRAG,
+        transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      });
+    });
+
+    // The clip takes over from the drawn figure as soon as it can play. Loading
+    // it from a CORS-enabled URL keeps it usable as a texture from file:// too;
+    // a copy sitting next to this page is the offline fallback.
+    const person = { live: false, mirror: true, probeAcc: 0, kick: function () {} };
+
+    function showFeedNote() {
+      const el = document.getElementById('feedNote');
+      el.textContent = '\u0420\u043E\u043B\u0438\u043A \u0441 \u0434\u0438\u0441\u043A\u0430 WebGL \u043D\u0435 \u0431\u0435\u0440\u0451\u0442 \u2014 \u043E\u0442\u043A\u0440\u043E\u0439\u0442\u0435 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443 \u0447\u0435\u0440\u0435\u0437 \u043B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0439 \u0441\u0435\u0440\u0432\u0435\u0440';
+      el.classList.add('on');
+    }
+
+    (function loadPersonVideo() {
+      const v = document.createElement('video');
+      v.crossOrigin = 'anonymous'; // must be set before src to matter
+      v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true;
+      v.preload = 'auto'; v.src = PERSON_VIDEO;
+      // Kept in the document (out of sight) so the browser keeps decoding it.
+      v.style.cssText = 'position:fixed;left:-4px;top:-4px;width:2px;height:2px;opacity:0.01;pointer-events:none';
+      document.body.appendChild(v);
+      const tex = new THREE.VideoTexture(v);
+      tex.colorSpace = THREE.SRGBColorSpace;
+
+      const probe = document.createElement('canvas');
+      const pctx = probe.getContext('2d', { willReadFrequently: true });
+      let readable = true;
+
+      v.addEventListener('error', function () {
+        if (v.src.indexOf(PERSON_VIDEO_LOCAL) < 0) { v.src = PERSON_VIDEO_LOCAL; v.load(); }
+      });
+
+      // Fit the whole frame on the floor, upright, bottom edge on the slab.
+      function feedFit(vw, vh) {
+        person.mirror = false;
+        const h = Math.min(FEED_H, FEED_W * vh / vw);
+        fitTarget.h = h;
+        fitTarget.w = h * (vw / vh);
+        fitTarget.cy = h / 2;
+        fitTarget.cx = 0;
+      }
+
+      // Find the backdrop colour from the frame corners, then the bounding box
+      // of everything that isn't the backdrop: that box is the person.
+      person.measure = function () {
+        const vw = v.videoWidth, vh = v.videoHeight;
+        if (!vw || !vh || v.readyState < 2) return;
+        if (!readable) { feedFit(vw, vh); return; }
+        const W = 72, H = Math.max(8, Math.round(W * vh / vw));
+        probe.width = W; probe.height = H;
+        pctx.drawImage(v, 0, 0, W, H);
+        let data;
+        try { data = pctx.getImageData(0, 0, W, H).data; }
+        catch (err) { readable = false; feedFit(vw, vh); return; } // clip we may not inspect
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let y = 0; y < 3; y++) {
+          for (let x = 0; x < 3; x++) {
+            const corners = [[x, y], [W - 1 - x, y], [x, H - 1 - y], [W - 1 - x, H - 1 - y]];
+            for (let c = 0; c < 4; c++) {
+              const i = (corners[c][1] * W + corners[c][0]) * 4;
+              r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+            }
+          }
+        }
+        r /= n * 255; g /= n * 255; b /= n * 255;
+
+        let x0 = W, y0 = H, x1 = -1, y1 = -1;
+        const tol2 = KEY_TOL * KEY_TOL;
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            const i = (y * W + x) * 4;
+            const dr = data[i] / 255 - r, dg = data[i + 1] / 255 - g, db = data[i + 2] / 255 - b;
+            if (dr * dr + dg * dg + db * db > tol2) {
+              if (x < x0) x0 = x;
+              if (x > x1) x1 = x;
+              if (y < y0) y0 = y;
+              if (y > y1) y1 = y;
+            }
+          }
+        }
+        if (x1 < x0 || y1 < y0) return;
+
+        // A box filling the frame means busy footage: play it as it is rather
+        // than cutting a person-shaped hole out of the scenery.
+        const bw = (x1 - x0 + 1) / W, bh = (y1 - y0 + 1) / H;
+        const keyable = bh < 0.9 && bw < 0.9;
+        personMats.forEach(function (m) {
+          m.uniforms.uKeyOn.value = keyable ? 1 : 0;
+          m.uniforms.uFeather.value = keyable ? 0.012 : 0.045;
+        });
+        person.mirror = keyable; // never flip real footage
+        if (!keyable) { feedFit(vw, vh); return; }
+
+        const h = PERSON_H / bh;
+        fitTarget.h = h;
+        fitTarget.w = h * (vw / vh);
+        fitTarget.cy = h * ((y1 + 1) / H - 0.5);
+        fitTarget.cx = -fitTarget.w * ((x0 + x1 + 1) / (2 * W) - 0.5);
+      };
+
+      // Some browsers hold muted autoplay until the page is touched.
+      person.kick = function () { if (v.paused) v.play().catch(function () {}); };
+
+      v.addEventListener('loadeddata', function () {
+        person.measure();
+        // A frame we may not read is also a frame WebGL refuses to upload, so
+        // keep the drawn figures instead of hanging black panels in the rooms.
+        if (!readable) { showFeedNote(); return; }
+        person.live = true;
+        personMats.forEach(function (m) { m.uniforms.uMap.value = tex; });
+        Object.assign(fit, fitTarget); // no slide-in on the first frame
+      });
+      v.play().catch(function () {});
+    })();
 
     // ---- Cameras (one set per floor) ----
     const camObjs = [];
@@ -507,25 +905,40 @@
       );
       lens.position.z = 0.12; group.add(lens);
 
-      const range = local.distanceTo(lookLocal) + 2;
-      const half = THREE.MathUtils.degToRad(26);
-      const radius = Math.tan(half) * range;
-      const coneGeo = new THREE.ConeGeometry(radius, range, 30, 1, true);
-      coneGeo.translate(0, -range / 2, 0);
-      coneGeo.rotateX(-Math.PI / 2);
-      const cone = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({
-        color: 0xffa64d, transparent: true, opacity: 0.10,
-        side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
-      }));
-      group.add(cone);
+      // Someone walking across what this camera watches: a path straight
+      // through the aim point, at right angles to the line of sight.
+      const flat = new THREE.Vector3(dir.x, 0, dir.z);
+      if (flat.lengthSq() < 1e-6) flat.set(0, 0, 1);
+      flat.normalize();
+      const side = new THREE.Vector3(-flat.z, 0, flat.x);
+      const reach = 2.0 + rnd() * 1.8;
+      const from = lookLocal.clone().addScaledVector(side, -reach);
+      const to = lookLocal.clone().addScaledVector(side, reach);
+      [from, to].forEach(function (v) {
+        v.x = clamp(v.x, -17, 17);
+        v.z = clamp(v.z, -11, 11);
+        v.y = 0;
+      });
 
-      // Animated outline of the FOV footprint, shown only for the selected camera.
-      const outline = new THREE.LineSegments(
-        new THREE.EdgesGeometry(coneGeo),
-        new THREE.LineBasicMaterial({ color: 0x33e6ff, transparent: true, opacity: 0 })
+      // A holder sits on the walking path; the quad inside it holds the image.
+      const fl = floors[cam.floor];
+      fl.crowd = (fl.crowd || 0) + 1;
+      const walker = new THREE.Object3D();
+      const quad = new THREE.Mesh(PERSON_GEO, personMats[fl.crowd % personMats.length]);
+      quad.renderOrder = 5;
+      walker.add(quad);
+      fl.group.add(walker);
+
+      const shadow = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.6, 1.6),
+        new THREE.MeshBasicMaterial({
+          map: blobTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        })
       );
-      outline.visible = false;
-      group.add(outline);
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.position.y = 0.05 + fl.crowd * 0.004; // above the plan, below the walls
+      shadow.renderOrder = 4;
+      fl.group.add(shadow);
 
       const div = document.createElement('div');
       div.className = 'cam-label';
@@ -535,7 +948,12 @@
       group.add(label);
 
       floors[cam.floor].group.add(group);
-      camObjs.push({ cam: cam, group: group, lens: lens, cone: cone, outline: outline, label: div });
+      camObjs.push({
+        cam: cam, group: group, lens: lens, label: div, labelObj: label,
+        walker: walker, quad: quad, shadow: shadow,
+        from: from, to: to, span: from.distanceTo(to),
+        speed: 0.7 + rnd() * 0.4, phase: rnd() * 20,
+      });
       pickables.push(group);
 
       cam._pos = local.clone().add(new THREE.Vector3(0, cam.floor * FLOOR_SPACING, 0));
@@ -550,20 +968,25 @@
     function applyFloorVisuals() {
       floors.forEach(function (fl) {
         const on = overview || fl.level === activeFloor;
-        fl.wallMat.opacity = on ? 0.5 : 0.2;
+        fl.group.visible = !mode2d || fl.level === activeFloor; // plan view shows one floor only
+        fl.wallMat.opacity = mode2d ? 0.8 : (on ? 0.5 : 0.2);
         fl.edgeMat.opacity = on ? 1.0 : 0.4;
         fl.edgeMat.color.setHex((!overview && fl.level === activeFloor) ? 0x9ec2ff : (overview ? 0x7c9cd0 : 0x4f6e9e));
-        fl.planMat.opacity = on ? 0.9 : 0.4;
+        fl.planMat.opacity = mode2d ? 1 : (on ? 0.9 : 0.4);
+        fl.apron.visible = fl.level === activeFloor; // only the floor in focus gets one
       });
       camObjs.forEach(function (o) {
         const vis = !overview && o.cam.floor === activeFloor;
         o.group.visible = vis; // markers only on the selected floor (hidden in overview)
-        o.label.style.display = vis ? '' : 'none';
+        o.labelObj.visible = vis;
+        o.walker.visible = vis;
+        o.shadow.visible = vis && !mode2d; // a shadow makes no sense from straight above
       });
     }
 
     function setFloor(idx) {
       idx = Math.max(0, Math.min(FLOORS - 1, idx));
+      if (mode2d) { showPlan(idx); return; } // stay in 2D, just swap the floor
       const wasOverview = overview;
       overview = false;
       if (idx === activeFloor && !wasOverview) return;
@@ -606,6 +1029,7 @@
 
     // "Whole building" overview: collapse the stack and frame all floors.
     function showBuilding() {
+      if (mode2d) exit2D();
       overview = true;
       applyFloorVisuals();
       applyFloorSpread();
@@ -635,16 +1059,30 @@
 
     // ---- Postprocessing (bloom) ----
     const composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
     const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.85, 0.5, 0.85);
     composer.addPass(bloom);
 
     // ---- Sizing ----
+    // World-space footprint the 2D plan has to fit: the plate plus a margin.
+    const PLAN_W = SLAB_X * 2 + 4, PLAN_H = SLAB_Z * 2 + 4;
+    const planFit = { w: PLAN_W, h: PLAN_H };
+
     function resize() {
       const w = container.clientWidth || 1;
       const h = container.clientHeight || 1;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+
+      // Contain-fit the floor plan in the viewport.
+      const aspect = w / h;
+      if (aspect >= PLAN_W / PLAN_H) { planFit.h = PLAN_H; planFit.w = PLAN_H * aspect; }
+      else { planFit.w = PLAN_W; planFit.h = PLAN_W / aspect; }
+      planCam.left = -planFit.w / 2; planCam.right = planFit.w / 2;
+      planCam.top = planFit.h / 2; planCam.bottom = -planFit.h / 2;
+      planCam.updateProjectionMatrix();
+
       renderer.setSize(w, h);
       composer.setSize(w, h);
       labelRenderer.setSize(w, h);
@@ -652,16 +1090,121 @@
     resize();
     new ResizeObserver(resize).observe(container);
 
+    // ---- 2D floor plan mode ----
+    const HINT_3D = '\u043A\u043B\u0438\u043A \u043F\u043E \u044D\u0442\u0430\u0436\u0443 \u2014 \u0432\u044B\u0431\u0440\u0430\u0442\u044C \u00B7 \u0442\u044F\u043D\u0443\u0442\u044C \u0432\u0432\u0435\u0440\u0445/\u0432\u043D\u0438\u0437 \u2014 \u043B\u0438\u0441\u0442\u0430\u0442\u044C \u00B7 \u043A\u043B\u0438\u043A \u0441\u043D\u0430\u0440\u0443\u0436\u0438 \u2014 \u043F\u043B\u0430\u043D 2D \u00B7 \u043A\u043B\u0438\u043A \u043F\u043E \u043A\u0430\u043C\u0435\u0440\u0435 \u2014 \u0432\u0438\u0434\u0435\u043E';
+    const HINT_2D = '\u043A\u043E\u043B\u0435\u0441\u043E \u2014 \u0437\u0443\u043C \u00B7 \u043A\u043B\u0438\u043A \u043F\u043E \u043A\u0430\u043C\u0435\u0440\u0435 \u2014 \u0432\u0438\u0434\u0435\u043E \u00B7 \u043A\u043B\u0438\u043A \u043F\u043E \u043F\u043B\u0438\u0442\u0435 \u0441\u043D\u0430\u0440\u0443\u0436\u0438 \u0438\u043B\u0438 Esc \u2014 \u043D\u0430\u0437\u0430\u0434 \u0432 3D';
+    const hintEl = document.getElementById('hint');
+    const planTitle = document.getElementById('planTitle');
+    const PLAN_CAM_H = 60; // orthographic: height only affects clipping and fog
+    hintEl.textContent = HINT_3D;
+
+    // Where the 3D view was left, so leaving the plan lands back on it.
+    const home = { pos: new THREE.Vector3(), tar: new THREE.Vector3(), floor: 0 };
+
+    // The fullscreen plan needs a sharper texture than the 3D thumbnail-sized one.
+    function setPlanDetail(level, hi) {
+      const fl = floors[level];
+      if (hi) {
+        if (!fl.hiTex) fl.hiTex = makePlanTexture(fl.level, 3);
+        fl.planMat.map = fl.hiTex;
+      } else if (fl.hiTex) {
+        fl.planMat.map = fl.baseTex;
+        fl.hiTex.dispose();
+        fl.hiTex = null;
+      }
+      fl.planMat.needsUpdate = true;
+    }
+
+    // Point the plan camera straight down at a floor.
+    function aimPlanCam(y) {
+      planCam.position.set(planControls.target.x, y + PLAN_CAM_H, planControls.target.z);
+      planCam.lookAt(planControls.target.x, y, planControls.target.z);
+    }
+
+    function showPlan(level) {
+      level = Math.max(0, Math.min(FLOORS - 1, level));
+      if (level !== activeFloor) setPlanDetail(activeFloor, false);
+      activeFloor = level;
+      setPlanDetail(level, true);
+      planTitle.textContent = '\u042D\u0442\u0430\u0436 ' + (level + 1) + ' \u00B7 \u043F\u043B\u0430\u043D';
+      applyFloorVisuals();
+      applyFloorSpread();
+      updateFloorUI();
+    }
+
+    function enter2D(level) {
+      if (mode2d) { showPlan(level); return; }
+      mode2d = true;
+      overview = false;
+      setHoverFloor(null);
+      showPlan(level);
+
+      document.body.classList.add('mode2d');
+      container.classList.add('plan2d');
+      hintEl.textContent = HINT_2D;
+      resize(); // the scene just went fullscreen
+
+      // Remember the 3D framing, then switch straight over: no fly-through.
+      home.pos.copy(camera.position);
+      home.tar.copy(controls.target);
+      home.floor = level;
+
+      tween = null;
+      controls.enabled = false;
+      controls.autoRotate = false;
+      planControls.target.set(0, floors[activeFloor].targetY, 0);
+      planCam.zoom = 1;
+      planCam.updateProjectionMatrix();
+      aimPlanCam(floors[activeFloor].targetY);
+      planControls.enabled = true;
+      activeCam = planCam;
+      renderPass.camera = planCam;
+    }
+
+    function exit2D() {
+      if (!mode2d) return;
+      mode2d = false;
+      planControls.enabled = false;
+      setHoverFloor(null); // the chip's wording depends on the mode
+      setPlanDetail(activeFloor, false);
+      document.body.classList.remove('mode2d');
+      container.classList.remove('plan2d');
+      hintEl.textContent = HINT_3D;
+      resize(); // back to the smaller viewport
+
+      // Straight back to the framing we came from, lifted if the floor changed.
+      const dy = floorCenterY(activeFloor) - floorCenterY(home.floor);
+      tween = null;
+      activeCam = camera;
+      renderPass.camera = camera;
+      camera.position.set(home.pos.x, home.pos.y + dy, home.pos.z);
+      controls.target.set(home.tar.x, home.tar.y + dy, home.tar.z);
+      controls.enabled = true;
+
+      applyFloorVisuals();
+      applyFloorSpread();
+      updateFloorUI();
+    }
+
+    document.getElementById('exit2d').addEventListener('click', exit2D);
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && mode2d) exit2D();
+    });
+
     // ---- Picking / interaction ----
     const raycaster = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
     let downXY = null;
 
-    function pick(ev) {
+    function setNdc(ev) {
       const r = renderer.domElement.getBoundingClientRect();
       ndc.x = ((ev.clientX - r.left) / r.width) * 2 - 1;
       ndc.y = -((ev.clientY - r.top) / r.height) * 2 + 1;
-      raycaster.setFromCamera(ndc, camera);
+      raycaster.setFromCamera(ndc, activeCam);
+    }
+
+    function pick(ev) {
+      setNdc(ev);
       const hits = raycaster.intersectObjects(pickables, true);
       for (const h of hits) {
         let o = h.object;
@@ -671,21 +1214,130 @@
       return null;
     }
 
+    // Nearest floor plate under the pointer: { level, kind, x, z } or null.
+    function pickPlate(ev) {
+      setNdc(ev);
+      const hits = raycaster.intersectObjects(floorPlates, false);
+      for (const h of hits) {
+        // Hidden plates still register hits, and in plan view they sit between
+        // the camera and the floor being looked at.
+        if (!h.object.visible || !h.object.parent.visible) continue;
+        return {
+          level: h.object.userData.floorLevel, kind: h.object.userData.plate,
+          x: h.point.x, z: h.point.z,
+        };
+      }
+      return null;
+    }
+
+    // Plates worth a hover chip: the apron always, a slab only when clicking it
+    // would actually change the selection.
+    function hoverPlate(ev) {
+      const p = pickPlate(ev);
+      if (!p) return null;
+      if (p.kind === 'slab' && (mode2d || p.level === activeFloor)) return null;
+      return p;
+    }
+
+    // Hint chip shown while the apron is hovered. Deliberately click-through:
+    // the click is handled by the canvas, so the chip can sit under the cursor.
+    const badgeEl = document.createElement('div');
+    badgeEl.className = 'floor-badge';
+    badgeEl.innerHTML =
+      '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 10h18M13 10v11"/></svg>' +
+      '<span></span>';
+    const badgeText = badgeEl.querySelector('span');
+    const badgeObj = new CSS2DObject(badgeEl);
+    badgeObj.visible = false;
+    scene.add(badgeObj);
+
+    let hoverFloor = -1, hoverKind = '';
+    const hoverAt = new THREE.Vector3();
+    function setHoverFloor(spot) {
+      const level = spot ? spot.level : -1;
+      const kind = spot ? spot.kind : '';
+      if (spot) hoverAt.set(spot.x, 0, spot.z);
+      if (level === hoverFloor && kind === hoverKind) return;
+      if (hoverFloor >= 0) {
+        floors[hoverFloor].apronMat.color.setHex(SLAB_COLOR);
+        floors[hoverFloor].slabMat.color.setHex(SLAB_COLOR);
+      }
+      hoverFloor = level;
+      hoverKind = kind;
+      badgeObj.visible = level >= 0;
+      if (level < 0) return;
+      if (kind === 'apron') {
+        floors[level].apronMat.color.setHex(SLAB_HOVER);
+        badgeText.textContent = mode2d
+          ? '\u041A\u043B\u0438\u043A \u2014 \u043D\u0430\u0437\u0430\u0434 \u0432 3D'
+          : '\u042D\u0442\u0430\u0436 ' + (level + 1) + ' \u00B7 \u043A\u043B\u0438\u043A \u2014 \u043F\u043B\u0430\u043D 2D';
+      } else {
+        floors[level].slabMat.color.setHex(SLAB_HOVER);
+        badgeText.textContent = '\u042D\u0442\u0430\u0436 ' + (level + 1) + ' \u00B7 \u043A\u043B\u0438\u043A \u2014 \u0432\u044B\u0431\u0440\u0430\u0442\u044C';
+      }
+    }
+
+    // Hauling a floor up or down walks the selection through the stack, as if
+    // the building were being pulled past a fixed eye level.
+    const DRAG_PER_FLOOR = 46; // px of travel per floor
+    let haul = null;
+
+    function endHaul() {
+      const wasHauling = !!(haul && haul.on);
+      if (wasHauling) controls.enableRotate = true;
+      haul = null;
+      return wasHauling;
+    }
+
     const dom = renderer.domElement;
     dom.addEventListener('pointerdown', function (e) {
       downXY = [e.clientX, e.clientY];
       controls.autoRotate = false; // stop the intro spin on first interaction
+      person.kick();
+      if (!mode2d && pickPlate(e)) haul = { x: e.clientX, y: e.clientY, from: activeFloor, on: false };
     });
     dom.addEventListener('pointerup', function (e) {
+      const hauled = endHaul();
       if (!downXY) return;
       const moved = Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]);
       downXY = null;
-      if (moved > 6) return; // it was a drag, not a click
+      if (hauled || moved > 6) return; // it was a drag, not a click
       const cam = pick(e);
-      if (cam) window.openCard(cam);
+      if (cam) { window.openCard(cam); return; }
+      const p = pickPlate(e);
+      if (!p) return;
+      // The apron outside the walls toggles the plan: in, then back out.
+      if (p.kind === 'apron') { if (mode2d) exit2D(); else enter2D(p.level); }
+      else if (!mode2d) setFloor(p.level);
     });
     dom.addEventListener('pointermove', function (e) {
-      dom.style.cursor = pick(e) ? 'pointer' : 'grab';
+      if (haul) {
+        const dx = e.clientX - haul.x, dy = e.clientY - haul.y;
+        // A sideways start means the user wants to orbit after all.
+        if (!haul.on && Math.abs(dx) > 7) haul = null;
+        else if (!haul.on && Math.abs(dy) > 7) {
+          haul.on = true;
+          controls.enableRotate = false;
+          setHoverFloor(null);
+          dom.style.cursor = 'ns-resize';
+        }
+        if (haul && haul.on) {
+          // Pulling the stack down brings the floors above it into focus.
+          setFloor(haul.from + Math.round(dy / DRAG_PER_FLOOR));
+          return;
+        }
+      }
+      const cam = pick(e);
+      if (downXY) { dom.style.cursor = 'grabbing'; return; } // don't fight the orbit drag
+      const spot = cam ? null : hoverPlate(e);
+      setHoverFloor(spot);
+      dom.style.cursor = (cam || spot) ? 'pointer' : 'grab';
+    });
+    dom.addEventListener('pointercancel', endHaul);
+    dom.addEventListener('pointerleave', function () {
+      endHaul();
+      downXY = null;
+      setHoverFloor(null);
     });
 
     // ---- Fly-to focus (called from openCard) ----
@@ -693,6 +1345,7 @@
     const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
     window.focusCamera = function (cam) {
+      if (mode2d) return; // the plan view stays put
       if (!overview && cam.floor !== activeFloor) { activeFloor = cam.floor; applyFloorVisuals(); applyFloorSpread(); updateFloorUI(); }
       const pos = cam._pos, dir = cam._dir;
       const flat = dir.clone().setY(0);
@@ -736,37 +1389,82 @@
         const e = easeInOut(tween.t);
         camera.position.lerpVectors(tween.fromPos, tween.toPos, e);
         controls.target.lerpVectors(tween.fromTar, tween.toTar, e);
-        if (tween.t >= 1) tween = null;
+        if (tween.t >= 1) {
+          const done = tween.onDone;
+          tween = null;
+          if (done) done();
+        }
       }
 
-      // Pulse + selected highlight.
+      // Keep the plan camera over the (still settling) active floor.
+      if (mode2d && activeCam === planCam) {
+        planControls.target.y = floors[activeFloor].group.position.y;
+        aimPlanCam(planControls.target.y);
+      }
+
+      // The hover chip floats just above the spot on the plate being pointed at.
+      if (badgeObj.visible && hoverFloor >= 0) {
+        badgeObj.position.set(hoverAt.x, floors[hoverFloor].group.position.y + 0.9, hoverAt.z);
+      }
+
+      if (person.live) {
+        // Re-measure the clip often enough to keep the figure pinned in place.
+        person.probeAcc += dt;
+        if (person.probeAcc > 0.12) { person.probeAcc = 0; person.measure(); }
+        const ease = Math.min(1, dt * 8);
+        fit.w += (fitTarget.w - fit.w) * ease;
+        fit.h += (fitTarget.h - fit.h) * ease;
+        fit.cx += (fitTarget.cx - fit.cx) * ease;
+        fit.cy += (fitTarget.cy - fit.cy) * ease;
+      } else {
+        sprites.forEach(function (s) { s.step(t, dt); });
+      }
+      const eyeX = activeCam.position.x, eyeZ = activeCam.position.z;
+
+      // Walk the people and pulse the selected camera.
       camObjs.forEach((o, i) => {
         if (!o.group.visible) return; // skip cameras on hidden floors
         const active = window.selectedCam === o.cam;
         const pulse = 0.7 + 0.35 * Math.sin(t * 3 + i);
         o.lens.material.emissiveIntensity = (active ? 3.0 : 1.1) * pulse;
-
-        if (active) {
-          // Distinct cyan FOV with a breathing, glowing contour.
-          o.cone.material.color.setHex(0x2fe0ff);
-          o.cone.material.opacity = 0.55 + 0.18 * Math.sin(t * 4);
-          o.lens.material.emissive.setHex(0x2fe0ff);
-          o.outline.visible = true;
-          o.outline.material.opacity = 0.7 + 0.3 * Math.abs(Math.sin(t * 3.5));
-          const s = 1 + 0.05 * Math.sin(t * 4);
-          o.outline.scale.set(s, s, s);
-        } else {
-          o.cone.material.color.setHex(0xffa64d);
-          o.cone.material.opacity = 0.14;
-          o.lens.material.emissive.setHex(0xf0883e);
-          o.outline.visible = false;
-        }
+        o.lens.material.emissive.setHex(active ? 0x2fe0ff : 0xf0883e);
         o.label.classList.toggle('active', active);
+
+        // Back and forth along the path, in metres per second.
+        const trip = (t * o.speed + o.phase) / Math.max(0.5, o.span);
+        const leg = Math.floor(trip) % 2;
+        const s = trip - Math.floor(trip);
+        const walk = leg === 0 ? s : 1 - s;
+        const px = o.from.x + (o.to.x - o.from.x) * walk;
+        const pz = o.from.z + (o.to.z - o.from.z) * walk;
+
+        const p = o.walker;
+        if (mode2d) {
+          // Straight down: lay the image on the floor so it stays visible.
+          p.position.set(px, 0.12, pz);
+          p.rotation.set(-Math.PI / 2, 0, 0);
+        } else {
+          // Upright, turning about the feet to keep facing the viewer.
+          p.position.set(px, 0, pz);
+          p.rotation.set(0, Math.atan2(eyeX - px, eyeZ - pz), 0);
+        }
+        o.quad.position.set(fit.cx, fit.cy, 0);
+        o.quad.scale.set(fit.w, fit.h, 1);
+
+        // Mirror when the walk reads right-to-left on screen.
+        const travel = (leg === 0 ? 1 : -1);
+        const rx = Math.cos(p.rotation.y), rz = -Math.sin(p.rotation.y);
+        const toward = travel * ((o.to.x - o.from.x) * rx + (o.to.z - o.from.z) * rz);
+        p.scale.x = (!person.mirror || toward >= 0) ? 1 : -1;
+
+        o.shadow.position.x = px;
+        o.shadow.position.z = pz;
       });
 
-      controls.update();
+      if (mode2d) { if (planControls.enabled) planControls.update(); }
+      else controls.update();
       composer.render();
-      labelRenderer.render(scene, camera);
+      labelRenderer.render(scene, activeCam);
     }
     animate();
   </script>
