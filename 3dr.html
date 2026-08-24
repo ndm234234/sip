@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Реконструкция с человеком - Реалистичная демо</title>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0a0a12;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            background: rgba(10, 10, 18, 0.92);
+            backdrop-filter: blur(16px);
+            padding: 12px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        #header .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #header .logo-icon {
+            width: 34px;
+            height: 34px;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        #header h1 {
+            font-size: 17px;
+            font-weight: 600;
+        }
+
+        #header h1 span {
+            color: rgba(255, 255, 255, 0.35);
+            font-weight: 400;
+            font-size: 13px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 7px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            color: #e0e0e0;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-family: inherit;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .btn.primary {
+            background: linear-gradient(135deg, #3b82f6, #7c3aed);
+            border-color: transparent;
+            color: #fff;
+        }
+
+        .btn.primary:hover {
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+            transform: translateY(-1px) scale(1.02);
+        }
+
+        .btn.primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .btn .dot.green {
+            background: #4ade80;
+            animation: pulse-dot 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.3;
+                transform: scale(0.7);
+            }
+        }
+
+        #statusBar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(10, 10, 18, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 10px 22px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            transition: all 0.4s ease;
+        }
+
+        #statusBar .stat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        #statusBar .stat .value {
+            color: #fff;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        #statusBar .stat .value.highlight {
+            color: #60a5fa;
+        }
+
+        #statusBar .stat .value.green {
+            color: #4ade80;
+        }
+
+        #statusBar .divider {
+            width: 1px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .progress-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .progress-bar {
+            width: 120px;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar .fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .progress-text {
+            font-size: 12px;
+            font-weight: 500;
+            color: #60a5fa;
+            min-width: 36px;
+            text-align: right;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        #hint {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 5;
+            color: rgba(255, 255, 255, 0.12);
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 4px 14px;
+            border-radius: 16px;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        #infoPanel {
+            position: absolute;
+            right: 16px;
+            top: 76px;
+            z-index: 10;
+            background: rgba(10, 10, 18, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 14px 16px;
+            min-width: 150px;
+            font-size: 12px;
+            transition: all 0.4s ease;
+        }
+
+        #infoPanel .label {
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        #infoPanel .stage {
+            font-size: 14px;
+            font-weight: 500;
+            color: #fff;
+        }
+
+        #infoPanel .stage .sub {
+            color: rgba(255, 255, 255, 0.25);
+            font-weight: 400;
+            font-size: 12px;
+        }
+
+        #infoPanel .detail {
+            color: rgba(255, 255, 255, 0.35);
+            font-size: 11px;
+            margin-top: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
+        @media (max-width: 768px) {
+            #header {
+                padding: 8px 12px;
+            }
+            #header h1 {
+                font-size: 13px;
+            }
+            #header h1 span {
+                font-size: 10px;
+            }
+            .btn {
+                padding: 5px 10px;
+                font-size: 11px;
+            }
+            #statusBar {
+                bottom: 12px;
+                padding: 8px 12px;
+                gap: 10px;
+                width: calc(100% - 24px);
+                border-radius: 10px;
+            }
+            #statusBar .stat {
+                font-size: 10px;
+            }
+            .progress-bar {
+                width: 60px;
+            }
+            #infoPanel {
+                right: 8px;
+                top: 68px;
+                padding: 10px 12px;
+                min-width: 110px;
+            }
+            #infoPanel .stage {
+                font-size: 12px;
+            }
+            #hint {
+                font-size: 10px;
+                bottom: 70px;
+                padding: 3px 10px;
+            }
+            .header-actions .btn span {
+                display: none;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #infoPanel {
+                display: none;
+            }
+            #statusBar .divider {
+                display: none;
+            }
+            #statusBar .stat.hide-mobile {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div class="logo">
+            <div class="logo-icon">📐</div>
+            <h1>3D Реконструкция <span>• цифровой двойник</span></h1>
+        </div>
+        <div class="header-actions">
+            <button class="btn primary" id="btnStart">
+                <span class="dot green" id="statusDot"></span>
+                <span>Запустить</span>
+            </button>
+            <button class="btn" id="btnReset">⟳ Сброс</button>
+            <button class="btn" id="btnView">👁️ Вид</button>
+            <button class="btn" id="btnPerson">🧑 Персона</button>
+        </div>
+    </div>
+
+    <div id="infoPanel">
+        <div class="label">Текущий этап</div>
+        <div class="stage" id="stageDisplay">Ожидание</div>
+        <div class="detail" id="detailDisplay">● готов к работе</div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div id="hint">🖱️ Перетащите для осмотра • Колесико для зума</div>
+
+    <div id="statusBar">
+        <div class="stat">📷 <span class="value">4</span> камеры</div>
+        <div class="divider"></div>
+        <div class="stat">📍 <span class="value highlight" id="pointDisplay">0</span> точек</div>
+        <div class="divider"></div>
+        <div class="stat hide-mobile">🧩 <span class="value green" id="polyDisplay">0</span> полигонов</div>
+        <div class="divider hide-mobile"></div>
+        <div class="stat hide-mobile">🧑 <span class="value" id="personCount">0</span> человек</div>
+        <div class="divider hide-mobile"></div>
+        <div class="progress-wrap">
+            <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+            <span class="progress-text" id="progressText">0%</span>
+        </div>
+    </div>
+
+    <script>
+        // =========================================================
+        // 3D РЕКОНСТРУКЦИЯ С ЧЕЛОВЕКОМ
+        // Реалистичная демонстрация с захватом человека
+        // =========================================================
+
+        (function() {
+            'use strict';
+
+            const STAGES = [
+                { id: 'init', name: 'Инициализация', icon: '⚙️', detail: 'загрузка данных...' },
+                { id: 'features', name: 'Извлечение признаков', icon: '🔍', detail: 'SIFT + ORB' },
+                { id: 'matching', name: 'Сопоставление', icon: '🔗', detail: 'RANSAC + оптимизация' },
+                { id: 'sfm', name: 'SfM реконструкция', icon: '🏗️', detail: 'восстановление камер' },
+                { id: 'dense', name: 'Плотная реконструкция', icon: '📊', detail: 'MVS + облако точек' },
+                { id: 'mesh', name: 'Построение сетки', icon: '🔺', detail: 'Poisson Surface' },
+                { id: 'person', name: 'Обнаружение человека', icon: '🧑', detail: 'YOLO + поза' },
+                { id: 'texture', name: 'Текстурирование', icon: '🎨', detail: 'UV-развёртка' },
+                { id: 'done', name: '✅ Завершено', icon: '🎯', detail: 'модель готова' },
+            ];
+
+            const container = document.getElementById('canvas-container');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            const pointDisplay = document.getElementById('pointDisplay');
+            const polyDisplay = document.getElementById('polyDisplay');
+            const personCount = document.getElementById('personCount');
+            const stageDisplay = document.getElementById('stageDisplay');
+            const detailDisplay = document.getElementById('detailDisplay');
+            const btnStart = document.getElementById('btnStart');
+            const btnReset = document.getElementById('btnReset');
+            const btnView = document.getElementById('btnView');
+            const btnPerson = document.getElementById('btnPerson');
+            const statusDot = document.getElementById('statusDot');
+
+            let scene, camera, renderer, controls;
+            let pointCloudGroup, meshGroup, cameraGroup, environmentGroup, personGroup;
+            let isRunning = false;
+            let reconstructionComplete = false;
+            let personVisible = false;
+            let personModel = null;
+            let personSkeleton = null;
+            let animFrameId = null;
+
+            // --- Инициализация сцены ---
+            function initScene() {
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x0a0a12);
+                scene.fog = new THREE.Fog(0x0a0a12, 14, 28);
+
+                camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 50);
+                camera.position.set(7, 5, 9);
+                camera.lookAt(0, 0.5, 0);
+
+                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                renderer.toneMappingExposure = 1.0;
+                renderer.outputEncoding = THREE.sRGBEncoding;
+                container.appendChild(renderer.domElement);
+
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.enableDamping = true;
+                controls.dampingFactor = 0.08;
+                controls.rotateSpeed = 0.5;
+                controls.minDistance = 2;
+                controls.maxDistance = 25;
+                controls.target.set(0, 0.5, 0);
+                controls.update();
+
+                pointCloudGroup = new THREE.Group();
+                meshGroup = new THREE.Group();
+                cameraGroup = new THREE.Group();
+                environmentGroup = new THREE.Group();
+                personGroup = new THREE.Group();
+                scene.add(pointCloudGroup);
+                scene.add(meshGroup);
+                scene.add(cameraGroup);
+                scene.add(environmentGroup);
+                scene.add(personGroup);
+
+                setupLighting();
+                createEnvironment();
+                createRealisticCameras();
+
+                window.addEventListener('resize', () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+
+                animate();
+                setStage(0);
+                updateUI(0, 0);
+
+                setTimeout(() => {
+                    document.getElementById('hint').style.opacity = '0.3';
+                }, 3000);
+            }
+
+            // --- Освещение ---
+            function setupLighting() {
+                const ambient = new THREE.AmbientLight(0x404060, 0.5);
+                scene.add(ambient);
+
+                const mainLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+                mainLight.position.set(6, 12, 4);
+                mainLight.castShadow = true;
+                mainLight.shadow.mapSize.width = 2048;
+                mainLight.shadow.mapSize.height = 2048;
+                mainLight.shadow.camera.near = 0.5;
+                mainLight.shadow.camera.far = 30;
+                mainLight.shadow.camera.left = -10;
+                mainLight.shadow.camera.right = 10;
+                mainLight.shadow.camera.top = 10;
+                mainLight.shadow.camera.bottom = -10;
+                scene.add(mainLight);
+
+                const fill = new THREE.DirectionalLight(0x4488ff, 0.4);
+                fill.position.set(-5, 3, -5);
+                scene.add(fill);
+
+                const rim = new THREE.DirectionalLight(0x8888ff, 0.3);
+                rim.position.set(0, -2, 8);
+                scene.add(rim);
+
+                const pointLight1 = new THREE.PointLight(0xff6644, 0.2, 10);
+                pointLight1.position.set(-3, 1, 2);
+                scene.add(pointLight1);
+
+                const pointLight2 = new THREE.PointLight(0x4488ff, 0.15, 10);
+                pointLight2.position.set(3, 1, -2);
+                scene.add(pointLight2);
+            }
+
+            // --- Окружение ---
+            function createEnvironment() {
+                const floorMat = new THREE.MeshStandardMaterial({
+                    color: 0x111122,
+                    metalness: 0.8,
+                    roughness: 0.3,
+                    transparent: true,
+                    opacity: 0.3,
+                });
+                const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), floorMat);
+                floor.rotation.x = -Math.PI / 2;
+                floor.position.y = -1.8;
+                floor.receiveShadow = true;
+                environmentGroup.add(floor);
+
+                const gridHelper = new THREE.GridHelper(14, 24, 0x3b82f6, 0x1a1a3e);
+                gridHelper.position.y = -1.78;
+                gridHelper.material.transparent = true;
+                gridHelper.material.opacity = 0.12;
+                environmentGroup.add(gridHelper);
+
+                // Окружающие частицы
+                const envParticles = new THREE.BufferGeometry();
+                const count = 400;
+                const positions = new Float32Array(count * 3);
+                for (let i = 0; i < count * 3; i++) {
+                    positions[i] = (Math.random() - 0.5) * 18;
+                    positions[i] += (i % 3 === 1) ? 2 : 0;
+                }
+                envParticles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const envMat = new THREE.PointsMaterial({
+                    color: 0x4488ff,
+                    size: 0.015,
+                    transparent: true,
+                    opacity: 0.15,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                });
+                const envPoints = new THREE.Points(envParticles, envMat);
+                environmentGroup.add(envPoints);
+            }
+
+            // --- Камеры ---
+            function createRealisticCameras() {
+                const camPositions = [
+                    { x: -3.5, y: 2.8, z: -2.5, ry: 0.7, label: 'CAM-01' },
+                    { x: 3.5, y: 2.8, z: -2.5, ry: -0.7, label: 'CAM-02' },
+                    { x: -2.8, y: 2.8, z: 3.2, ry: 2.4, label: 'CAM-03' },
+                    { x: 2.8, y: 2.8, z: 3.2, ry: -2.4, label: 'CAM-04' },
+                ];
+
+                camPositions.forEach((pos, index) => {
+                    const group = new THREE.Group();
+
+                    const bodyMat = new THREE.MeshStandardMaterial({
+                        color: 0x1a1a2e,
+                        metalness: 0.7,
+                        roughness: 0.3,
+                    });
+
+                    const body = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.18, 0.15), bodyMat);
+                    body.position.set(0, 0, 0.1);
+                    group.add(body);
+
+                    const lensMat = new THREE.MeshStandardMaterial({
+                        color: 0x0a0a12,
+                        metalness: 0.9,
+                        roughness: 0.1,
+                    });
+                    const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 0.06, 24), lensMat);
+                    lens.rotation.x = Math.PI / 2;
+                    lens.position.set(0, 0, 0.22);
+                    group.add(lens);
+
+                    const glassMat = new THREE.MeshStandardMaterial({
+                        color: 0x4488ff,
+                        emissive: 0x2244aa,
+                        emissiveIntensity: 0.2,
+                        transparent: true,
+                        opacity: 0.5,
+                        metalness: 0.1,
+                        roughness: 0.0,
+                    });
+                    const glass = new THREE.Mesh(new THREE.CircleGeometry(0.045, 24), glassMat);
+                    glass.rotation.x = -Math.PI / 2;
+                    glass.position.set(0, 0, 0.25);
+                    group.add(glass);
+
+                    const ledMat = new THREE.MeshStandardMaterial({
+                        color: 0x22ff44,
+                        emissive: 0x22ff44,
+                        emissiveIntensity: 0.6,
+                    });
+                    const led = new THREE.Mesh(new THREE.SphereGeometry(0.015, 8, 8), ledMat);
+                    led.position.set(0.12, 0.06, 0.12);
+                    group.add(led);
+
+                    // Конус видимости
+                    const conePoints = [
+                        new THREE.Vector3(0, 0, 0.3),
+                        new THREE.Vector3(0.6, 0.4, 1.8),
+                        new THREE.Vector3(-0.6, 0.4, 1.8),
+                        new THREE.Vector3(-0.6, -0.4, 1.8),
+                        new THREE.Vector3(0.6, -0.4, 1.8),
+                        new THREE.Vector3(0.6, 0.4, 1.8),
+                    ];
+                    const coneGeo = new THREE.BufferGeometry().setFromPoints(conePoints);
+                    const coneMat = new THREE.LineBasicMaterial({
+                        color: 0x3b82f6,
+                        transparent: true,
+                        opacity: 0.06,
+                    });
+                    const coneLine = new THREE.Line(coneGeo, coneMat);
+                    group.add(coneLine);
+
+                    group.position.set(pos.x, pos.y, pos.z);
+                    group.rotation.y = pos.ry;
+                    group.userData = { led: led, index: index };
+                    scene.add(group);
+
+                    // Метка
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 128;
+                    canvas.height = 36;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    ctx.roundRect(0, 0, 128, 36, 8);
+                    ctx.fill();
+                    ctx.fillStyle = '#60a5fa';
+                    ctx.font = 'bold 14px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(pos.label, 64, 20);
+
+                    const texture = new THREE.CanvasTexture(canvas);
+                    const spriteMat = new THREE.SpriteMaterial({
+                        map: texture,
+                        transparent: true,
+                        depthWrite: false,
+                        opacity: 0.7,
+                    });
+                    const sprite = new THREE.Sprite(spriteMat);
+                    sprite.position.set(pos.x, pos.y + 0.5, pos.z);
+                    sprite.scale.set(1.0, 0.35, 1);
+                    scene.add(sprite);
+                });
+            }
+
+            // --- Создание реалистичного человека ---
+            function createPerson(x, y, z) {
+                const group = new THREE.Group();
+
+                // Параметры
+                const skinColor = 0xe8b88a;
+                const skinMat = new THREE.MeshStandardMaterial({
+                    color: skinColor,
+                    roughness: 0.7,
+                    metalness: 0.0,
+                });
+                const clothMat = new THREE.MeshStandardMaterial({
+                    color: 0x2a4a7f,
+                    roughness: 0.8,
+                    metalness: 0.0,
+                });
+                const darkClothMat = new THREE.MeshStandardMaterial({
+                    color: 0x1a2a4a,
+                    roughness: 0.9,
+                    metalness: 0.0,
+                });
+                const pantsMat = new THREE.MeshStandardMaterial({
+                    color: 0x1a2a3a,
+                    roughness: 0.9,
+                    metalness: 0.0,
+                });
+                const shoeMat = new THREE.MeshStandardMaterial({
+                    color: 0x222222,
+                    roughness: 0.8,
+                    metalness: 0.0,
+                });
+                const hairMat = new THREE.MeshStandardMaterial({
+                    color: 0x2a1a0a,
+                    roughness: 0.9,
+                    metalness: 0.0,
+                });
+
+                // --- Торс ---
+                const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.28, 0.55, 12), clothMat);
+                torso.position.y = 1.1;
+                torso.castShadow = true;
+                group.add(torso);
+
+                // Рубашка/воротник
+                const collar = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.28, 0.32, 0.06, 12),
+                    darkClothMat
+                );
+                collar.position.y = 1.38;
+                group.add(collar);
+
+                // --- Голова ---
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 16), skinMat);
+                head.position.y = 1.68;
+                head.castShadow = true;
+                group.add(head);
+
+                // Волосы
+                const hair = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.17, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.4),
+                    hairMat
+                );
+                hair.position.y = 1.78;
+                hair.scale.set(1, 0.7, 1);
+                group.add(hair);
+
+                // Шея
+                const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.08, 8), skinMat);
+                neck.position.y = 1.52;
+                group.add(neck);
+
+                // --- Глаза ---
+                const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 });
+                const pupilMat = new THREE.MeshStandardMaterial({ color: 0x222244, roughness: 0.0 });
+
+                const eyePositions = [
+                    [-0.09, 1.70, 0.14],
+                    [0.09, 1.70, 0.14]
+                ];
+                eyePositions.forEach(pos => {
+                    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 8), eyeMat);
+                    eye.position.set(pos[0], pos[1], pos[2]);
+                    group.add(eye);
+                    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 8), pupilMat);
+                    pupil.position.set(pos[0], pos[1], pos[2] + 0.03);
+                    group.add(pupil);
+                });
+
+                // --- Руки ---
+                const armMat = skinMat;
+                // Левая рука
+                const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.45, 8), armMat);
+                leftArm.position.set(-0.4, 1.2, 0);
+                leftArm.rotation.z = 0.2;
+                leftArm.rotation.x = -0.3;
+                leftArm.castShadow = true;
+                group.add(leftArm);
+
+                // Правая рука
+                const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.45, 8), armMat);
+                rightArm.position.set(0.4, 1.2, 0);
+                rightArm.rotation.z = -0.2;
+                rightArm.rotation.x = 0.3;
+                rightArm.castShadow = true;
+                group.add(rightArm);
+
+                // Кисти
+                const handMat = skinMat;
+                const leftHand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), handMat);
+                leftHand.position.set(-0.42, 0.95, 0.02);
+                group.add(leftHand);
+
+                const rightHand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), handMat);
+                rightHand.position.set(0.42, 0.95, -0.02);
+                group.add(rightHand);
+
+                // --- Ноги ---
+                const legMat = pantsMat;
+                // Левая нога
+                const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.5, 8), legMat);
+                leftLeg.position.set(-0.15, 0.55, 0);
+                leftLeg.castShadow = true;
+                group.add(leftLeg);
+
+                // Правая нога
+                const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.5, 8), legMat);
+                rightLeg.position.set(0.15, 0.55, 0);
+                rightLeg.castShadow = true;
+                group.add(rightLeg);
+
+                // Обувь
+                const shoePositions = [
+                    [-0.15, 0.18, 0.04],
+                    [0.15, 0.18, 0.04]
+                ];
+                shoePositions.forEach(pos => {
+                    const shoe = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.12, 0.06, 0.2),
+                        shoeMat
+                    );
+                    shoe.position.set(pos[0], pos[1], pos[2]);
+                    shoe.castShadow = true;
+                    group.add(shoe);
+                });
+
+                // Позиция
+                group.position.set(x, y, z);
+
+                // Добавляем скелет для анимации
+                group.userData = {
+                    parts: {
+                        torso,
+                        head,
+                        leftArm,
+                        rightArm,
+                        leftLeg,
+                        rightLeg,
+                    },
+                    animTime: 0,
+                };
+
+                return group;
+            }
+
+            // --- Анимация человека (лёгкое покачивание) ---
+            function animatePerson(person, time) {
+                if (!person) return;
+                const data = person.userData;
+                if (!data || !data.parts) return;
+
+                const t = time * 0.001;
+
+                // Лёгкое покачивание
+                const sway = Math.sin(t * 0.8) * 0.02;
+                const swayZ = Math.sin(t * 0.6 + 0.5) * 0.015;
+
+                // Торс
+                data.parts.torso.rotation.z = sway * 0.5;
+                data.parts.torso.rotation.x = swayZ * 0.3;
+
+                // Голова
+                data.parts.head.rotation.y = Math.sin(t * 0.4) * 0.1;
+                data.parts.head.rotation.z = Math.sin(t * 0.5 + 0.3) * 0.05;
+
+                // Руки (естественное качание)
+                data.parts.leftArm.rotation.x = -0.3 + Math.sin(t * 1.2 + 0.5) * 0.08;
+                data.parts.rightArm.rotation.x = 0.3 + Math.sin(t * 1.2 + 1.0) * 0.08;
+
+                // Ноги (лёгкое смещение)
+                data.parts.leftLeg.rotation.x = Math.sin(t * 1.0 + 0.2) * 0.03;
+                data.parts.rightLeg.rotation.x = Math.sin(t * 1.0 + 1.0) * 0.03;
+            }
+
+            // --- Генерация облака точек ---
+            function generateRealisticPointCloud(count, spread = 4.2, heightRange = 3.2) {
+                const positions = [];
+                const colors = [];
+
+                const wallColor = [0.45, 0.5, 0.65];
+                const floorColor = [0.3, 0.25, 0.2];
+                const ceilingColor = [0.7, 0.7, 0.75];
+                const furnitureColor1 = [0.25, 0.35, 0.5];
+                const furnitureColor2 = [0.6, 0.3, 0.2];
+                const skinColors = [
+                    [0.82, 0.65, 0.5],
+                    [0.78, 0.6, 0.45],
+                    [0.85, 0.7, 0.55],
+                    [0.7, 0.55, 0.4],
+                ];
+
+                for (let i = 0; i < count; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.pow(Math.random(), 0.7) * spread;
+                    const x = Math.cos(angle) * radius;
+                    const z = Math.sin(angle) * radius;
+                    const y = (Math.random() - 0.5) * heightRange;
+
+                    let color;
+                    const r = Math.random();
+
+                    // Область человека (центр комнаты)
+                    const distFromCenter = Math.sqrt(x * x + z * z);
+                    const isPerson = distFromCenter < 0.8 && y > -1.0 && y < 2.0;
+
+                    if (isPerson && r < 0.3) {
+                        // Точки человека
+                        const skin = skinColors[Math.floor(Math.random() * skinColors.length)];
+                        color = [
+                            skin[0] + Math.random() * 0.05,
+                            skin[1] + Math.random() * 0.05,
+                            skin[2] + Math.random() * 0.05,
+                        ];
+                    } else if (Math.abs(y + 1.5) < 0.2) {
+                        color = floorColor;
+                    } else if (Math.abs(y - 1.5) < 0.2) {
+                        color = ceilingColor;
+                    } else if (Math.abs(Math.abs(x) - spread * 0.85) < 0.3 ||
+                        Math.abs(Math.abs(z) - spread * 0.85) < 0.3) {
+                        color = wallColor;
+                    } else if (r < 0.12) {
+                        color = furnitureColor1;
+                    } else if (r < 0.2) {
+                        color = furnitureColor2;
+                    } else {
+                        const t = (y + 1.5) / 3.0;
+                        color = [
+                            0.3 + 0.4 * t + Math.random() * 0.1,
+                            0.3 + 0.3 * t + Math.random() * 0.1,
+                            0.4 + 0.3 * t + Math.random() * 0.1,
+                        ];
+                    }
+
+                    const v = 0.85 + Math.random() * 0.3;
+                    colors.push(
+                        Math.min(color[0] * v + Math.random() * 0.04, 1),
+                        Math.min(color[1] * v + Math.random() * 0.04, 1),
+                        Math.min(color[2] * v + Math.random() * 0.04, 1)
+                    );
+
+                    positions.push(x, y, z);
+                }
+
+                return { positions, colors };
+            }
+
+            // --- Обновление облака точек ---
+            function updatePointCloud(positions, colors) {
+                while (pointCloudGroup.children.length > 0) {
+                    const child = pointCloudGroup.children[0];
+                    child.geometry?.dispose();
+                    child.material?.dispose();
+                    pointCloudGroup.remove(child);
+                }
+
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+                const mat = new THREE.PointsMaterial({
+                    size: 0.04,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.85,
+                    sizeAttenuation: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                });
+
+                const points = new THREE.Points(geo, mat);
+                pointCloudGroup.add(points);
+            }
+
+            // --- Генерация меша ---
+            function generateRealisticMesh() {
+                const geo = new THREE.BufferGeometry();
+                const vertices = [];
+                const indices = [];
+                const uvs = [];
+
+                const cols = 80;
+                const rows = 60;
+                const spread = 3.8;
+                const heightRange = 3.0;
+
+                for (let row = 0; row < rows; row++) {
+                    for (let col = 0; col < cols; col++) {
+                        const u = col / (cols - 1);
+                        const v = row / (rows - 1);
+
+                        const angle = u * Math.PI * 2;
+                        const radius = (0.4 + 0.6 * Math.sin(v * Math.PI * 0.6 + 0.2)) * spread * 0.92;
+                        const x = Math.cos(angle) * radius;
+                        const z = Math.sin(angle) * radius;
+                        const y = (v - 0.5) * heightRange * 0.92 +
+                            0.15 * Math.sin(u * 12) * Math.cos(v * 10);
+
+                        vertices.push(
+                            x + (Math.random() - 0.5) * 0.02,
+                            y + (Math.random() - 0.5) * 0.015,
+                            z + (Math.random() - 0.5) * 0.02
+                        );
+                        uvs.push(u, v);
+                    }
+                }
+
+                for (let row = 0; row < rows - 1; row++) {
+                    for (let col = 0; col < cols - 1; col++) {
+                        const a = row * cols + col;
+                        const b = row * cols + col + 1;
+                        const c = (row + 1) * cols + col;
+                        const d = (row + 1) * cols + col + 1;
+                        indices.push(a, b, c);
+                        indices.push(b, d, c);
+                    }
+                }
+
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                geo.setIndex(indices);
+                geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+                geo.computeVertexNormals();
+
+                const colors = new Float32Array(vertices.length);
+                for (let i = 0; i < vertices.length / 3; i++) {
+                    const y = vertices[i * 3 + 1];
+                    const t = (y + 1.4) / 2.8;
+                    colors[i * 3] = 0.4 + 0.4 * t + Math.random() * 0.05;
+                    colors[i * 3 + 1] = 0.35 + 0.3 * (1 - t) + Math.random() * 0.05;
+                    colors[i * 3 + 2] = 0.5 + 0.3 * Math.sin(i * 0.05) + Math.random() * 0.05;
+                }
+                geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+                const mat = new THREE.MeshPhongMaterial({
+                    vertexColors: true,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.7,
+                    shininess: 30,
+                    metalness: 0.1,
+                    roughness: 0.7,
+                });
+
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                return mesh;
+            }
+
+            // --- Запуск реконструкции ---
+            function startReconstruction() {
+                if (isRunning) return;
+                isRunning = true;
+                reconstructionComplete = false;
+                btnStart.disabled = true;
+                btnStart.querySelector('span:last-child').textContent = '⏳ ...';
+                statusDot.className = 'dot';
+
+                // Удаляем старого человека
+                clearPerson();
+
+                let stageIndex = 0;
+                const totalStages = STAGES.length - 1;
+                let personAdded = false;
+
+                function runStage() {
+                    if (stageIndex >= totalStages) {
+                        finishReconstruction();
+                        return;
+                    }
+
+                    const stage = STAGES[stageIndex];
+                    setStage(stageIndex);
+                    updateUI(stageIndex, totalStages);
+
+                    const pointsToShow = Math.floor(
+                        15000 * ((stageIndex + 1) / totalStages)
+                    );
+
+                    const progress = stageIndex / totalStages;
+                    const data = generateRealisticPointCloud(
+                        Math.floor(pointsToShow * 0.8),
+                        4.0,
+                        3.0
+                    );
+
+                    updatePointCloud(data.positions, data.colors);
+
+                    // Добавляем человека на этапе обнаружения
+                    if (stageIndex === 6 && !personAdded) {
+                        personAdded = true;
+                        addPersonToScene();
+                    }
+
+                    if (stageIndex >= 4) {
+                        const mesh = generateRealisticMesh();
+                        mesh.material.transparent = true;
+                        mesh.material.opacity = 0;
+                        mesh.name = 'reconstructionMesh';
+                        meshGroup.add(mesh);
+
+                        let opacity = 0;
+                        const fadeInterval = setInterval(() => {
+                            opacity += 0.015;
+                            if (opacity >= 0.6) {
+                                opacity = 0.6;
+                                clearInterval(fadeInterval);
+                            }
+                            mesh.material.opacity = opacity;
+                        }, 30);
+                    }
+
+                    pointDisplay.textContent = pointsToShow;
+                    if (stageIndex >= 5) {
+                        polyDisplay.textContent = Math.floor(6000 + 2000 * (stageIndex - 4) / 2);
+                    }
+
+                    stageIndex++;
+                    const delay = 700 + Math.random() * 300;
+                    setTimeout(runStage, delay);
+                }
+
+                setTimeout(runStage, 400);
+            }
+
+            // --- Добавление человека ---
+            function addPersonToScene() {
+                // Создаём человека в центре комнаты
+                personModel = createPerson(0, -0.6, 0.5);
+                personModel.scale.set(0.85, 0.85, 0.85);
+                personModel.rotation.y = 0.3;
+                personGroup.add(personModel);
+
+                // Добавляем облако точек вокруг человека
+                const personPoints = [];
+                const personColors = [];
+                const skinColors = [
+                    [0.82, 0.65, 0.5],
+                    [0.78, 0.6, 0.45],
+                    [0.85, 0.7, 0.55],
+                ];
+
+                for (let i = 0; i < 800; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = 0.6 + Math.random() * 0.5;
+                    const x = Math.cos(angle) * radius * 0.6;
+                    const z = Math.sin(angle) * radius * 0.6 + 0.5;
+                    const y = -0.6 + Math.random() * 1.8;
+
+                    const skin = skinColors[Math.floor(Math.random() * skinColors.length)];
+                    personPoints.push(x, y, z);
+                    personColors.push(
+                        skin[0] + Math.random() * 0.05,
+                        skin[1] + Math.random() * 0.05,
+                        skin[2] + Math.random() * 0.05
+                    );
+                }
+
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(personPoints, 3));
+                geo.setAttribute('color', new THREE.Float32BufferAttribute(personColors, 3));
+
+                const mat = new THREE.PointsMaterial({
+                    size: 0.04,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.6,
+                    sizeAttenuation: true,
+                    blending: THREE.AdditiveBlending,
+                    depthWrite: false,
+                });
+
+                const points = new THREE.Points(geo, mat);
+                points.name = 'personPoints';
+                personGroup.add(points);
+
+                personCount.textContent = '1';
+                personVisible = true;
+                btnPerson.textContent = '🧑 Скрыть';
+            }
+
+            // --- Очистка человека ---
+            function clearPerson() {
+                while (personGroup.children.length > 0) {
+                    const child = personGroup.children[0];
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                    personGroup.remove(child);
+                }
+                personModel = null;
+                personVisible = false;
+                personCount.textContent = '0';
+                btnPerson.textContent = '🧑 Персона';
+            }
+
+            // --- Завершение ---
+            function finishReconstruction() {
+                isRunning = false;
+                reconstructionComplete = true;
+                btnStart.disabled = false;
+                btnStart.querySelector('span:last-child').textContent = '🔄 Повтор';
+                statusDot.className = 'dot green';
+
+                setStage(STAGES.length - 1);
+                progressFill.style.width = '100%';
+                progressText.textContent = '100%';
+                pointDisplay.textContent = '15243';
+                polyDisplay.textContent = '8247';
+
+                const data = generateRealisticPointCloud(15243, 4.0, 3.0);
+                updatePointCloud(data.positions, data.colors);
+
+                const finalMesh = generateRealisticMesh();
+                finalMesh.material.transparent = true;
+                finalMesh.material.opacity = 0.65;
+                meshGroup.add(finalMesh);
+
+                // Добавляем человека если его нет
+                if (!personVisible) {
+                    addPersonToScene();
+                }
+
+                stageDisplay.innerHTML = '✅ <span class="sub">реконструкция завершена</span>';
+                detailDisplay.textContent = '● модель готова к просмотру';
+            }
+
+            // --- UI ---
+            function setStage(index) {
+                const stage = STAGES[index] || STAGES[0];
+                stageDisplay.innerHTML = `${stage.icon} ${stage.name}`;
+                detailDisplay.textContent = `● ${stage.detail}`;
+            }
+
+            function updateUI(current, total) {
+                const progress = total > 0 ? (current / total) * 100 : 0;
+                progressFill.style.width = `${Math.min(progress, 100)}%`;
+                progressText.textContent = `${Math.round(Math.min(progress, 100))}%`;
+            }
+
+            // --- Сброс ---
+            function resetScene() {
+                if (isRunning) return;
+                reconstructionComplete = false;
+
+                while (pointCloudGroup.children.length) {
+                    const c = pointCloudGroup.children[0];
+                    c.geometry?.dispose();
+                    c.material?.dispose();
+                    pointCloudGroup.remove(c);
+                }
+                while (meshGroup.children.length) {
+                    const c = meshGroup.children[0];
+                    c.geometry?.dispose();
+                    c.material?.dispose();
+                    meshGroup.remove(c);
+                }
+                clearPerson();
+
+                pointDisplay.textContent = '0';
+                polyDisplay.textContent = '0';
+                progressFill.style.width = '0%';
+                progressText.textContent = '0%';
+                setStage(0);
+                updateUI(0, 0);
+                btnStart.querySelector('span:last-child').textContent = 'Запустить';
+                statusDot.className = 'dot green';
+                camera.position.set(7, 5, 9);
+                controls.target.set(0, 0.5, 0);
+                controls.update();
+            }
+
+            // --- Переключение вида ---
+            let viewIndex = 0;
+            const views = [
+                { pos: [7, 5, 9], target: [0, 0.5, 0] },
+                { pos: [0, 3, 10], target: [0, 0.5, 0] },
+                { pos: [8, 1.5, 0], target: [0, 0.5, 0] },
+                { pos: [-6, 4, -6], target: [0, 0.5, 0] },
+                { pos: [3, 1.5, 3], target: [0, 0.5, 0] },
+            ];
+
+            function cycleView() {
+                viewIndex = (viewIndex + 1) % views.length;
+                const v = views[viewIndex];
+                camera.position.set(v.pos[0], v.pos[1], v.pos[2]);
+                controls.target.set(v.target[0], v.target[1], v.target[2]);
+                controls.update();
+            }
+
+            // --- Переключение человека ---
+            function togglePerson() {
+                if (personVisible) {
+                    clearPerson();
+                } else {
+                    addPersonToScene();
+                }
+            }
+
+            // --- Анимация ---
+            function animate() {
+                animFrameId = requestAnimationFrame(animate);
+
+                const time = Date.now();
+
+                // LED камер
+                scene.children.forEach(child => {
+                    if (child.userData && child.userData.led) {
+                        const led = child.userData.led;
+                        const intensity = 0.3 + 0.7 * Math.abs(Math.sin(time * 0.002 + child.userData.index));
+                        led.material.emissiveIntensity = intensity;
+                    }
+                });
+
+                // Окружение
+                environmentGroup.children.forEach(child => {
+                    if (child.isPoints) {
+                        child.rotation.y += 0.0002;
+                    }
+                });
+
+                // Анимация человека
+                if (personModel) {
+                    animatePerson(personModel, time);
+                }
+
+                controls.update();
+                renderer.render(scene, camera);
+            }
+
+            // --- Обработчики ---
+            btnStart.addEventListener('click', () => {
+                if (reconstructionComplete) {
+                    resetScene();
+                    setTimeout(startReconstruction, 300);
+                } else {
+                    startReconstruction();
+                }
+            });
+
+            btnReset.addEventListener('click', resetScene);
+            btnView.addEventListener('click', cycleView);
+            btnPerson.addEventListener('click', togglePerson);
+
+            // --- Запуск ---
+            initScene();
+
+            setTimeout(() => {
+                setStage(0);
+                detailDisplay.textContent = '● система готова';
+            }, 300);
+
+        })();
+    </script>
+</body>
+</html>
